@@ -1,0 +1,114 @@
+#!/bin/bash
+#
+# fug: faster and uglier than fig.
+#
+# Usage: fug [ARGS]
+#
+# ARGS:
+#
+#   -l show the current logs
+#   -d run the docker containers in daemon mode
+#   -k kill the docker containers
+#   -n specify the name prefix for the containers
+#   -b run the build of the containers
+#
+# fug runs in the foreground by default, printing the containers' logs to the
+# console. The containers can then be stopped with a SIGINT/control-c.
+#
+# If run in daemon mode (-d) it prints the docker build and start messages
+# and then runs in the background. To stop the containers (once fug is in
+# daemon mode) run fug -k. Note you may want to run fug -k with -n ... TODO
+#
+# Additionally the docker logs can be viewed with fug -l.
+#
+# A name prefix for the fug orchestrated docker cluster can be specified with the -n argument,
+# otherwise an alphanumeric form of the current directory name shall be used.
+#
+# If -b the containers will be rebuilt.
+#
+# 
+#
+
+# Import the environment variables for things like:
+# DOCKER_SERVICES, DOCKER_LINKS, DOCKER_ENV, DOCKER_PORTS, DOCKER_VOLUMES, DOCKER_ROOT
+. ./env
+[ -f ./env.local ] && source ./env.local
+
+
+function reverse() {
+  local out=()
+  while [ $# -gt 0 ]; do
+      out=("$1" "${out[@]}")
+      shift 1
+  done
+  echo "${out[@]}"
+}
+
+function cleanup() {
+  local reversed_docker_services=$(reverse $DOCKER_SERVICES)
+  for i in $reversed_docker_services; do 
+    echo "Stopping ${NAME}_${i}"
+    docker stop ${NAME}_${i} &> /dev/null
+    docker rm ${NAME}_${i} &> /dev/null
+  done
+
+  if [ -z "$1" ]; then
+    exit $?
+  fi
+}
+
+# in daemon mode we run --detach
+if [ "$1" = "-d" ]; then
+  DAEMON=1
+  DOCKER_RUN_ARGS+=" --detach"
+
+# if not in daemon mode, then control-c runs a cleanup
+else
+  trap cleanup SIGINT
+  DOCKER_RUN_ARGS+=" --rm"
+fi
+
+
+# get an alphanumeric name for the containers base on the current working directory
+NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z]//')"
+
+# stop and remove the existing named containers
+cleanup 1
+
+# build up the command line arguments to docker
+declare -A ARGS
+for i in $DOCKER_SERVICES; do
+  for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
+  for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v"; done
+  for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v"; done
+  for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v"; done
+  for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged"; done
+done
+
+# build new images
+#if BUILD: TODO
+  for i in $DOCKER_SERVICES; do 
+    echo "* Building $i ... (${NAME}_${i}) "
+    docker build -t ${NAME}_${i} ./${i}
+  done
+#fi
+
+# run them
+for i in $DOCKER_SERVICES; do 
+  echo "* Starting $i ... "
+
+  # first check for this services links .. are they up yet? TODO
+
+  cmd="docker run ${DOCKER_RUN_ARGS} ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
+  $cmd &
+  sleep 1
+done
+
+# If not in daemon mode then await a control-c/SIGINT
+if [ -z "$DAEMON" ]; then
+  while true; do
+    read x
+    sleep 1
+  done
+fi
+
