@@ -26,13 +26,15 @@
 #
 # If -b the containers will be rebuilt.
 #
-# 
+#
 #
 
-# Import the environment variables for things like:
+# rely on the environment being setup desirably, we care about variables like:
 # DOCKER_SERVICES, DOCKER_LINKS, DOCKER_ENV, DOCKER_PORTS, DOCKER_VOLUMES, DOCKER_ROOT
-. ./env
-[ -f ./env.local ] && source ./env.local
+if [ -z "$DOCKER_SERVICES" ]; then
+  echo "Environment is missing. Ensure some DOCKER_ vars are set before running this script."
+  exit 1
+fi
 
 
 function reverse() {
