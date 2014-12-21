@@ -23,7 +23,7 @@ OPTIONS:
    -h      display this help
 
 When run with no arguments, fug will start services in the foreground.
-But remember to build (-b) the services first.
+If the containers haven't been built yet, fug will attempt to build them.
 
 Fug relies on the following environment variable to be set in fug.conf,
 for example:
@@ -90,6 +90,18 @@ function listen() {
   done
 }
 
+function build_container() {
+  # build new images
+  i=$1
+  echo "* Building $i ... (${NAME}_${i}) "
+  docker build -t ${NAME}_${i} ./${i}/
+  if [ "$?" -ne "0" ]; then
+    echo "*** Build container failed: $i ***"
+    exit 1
+  fi
+}
+
+
 # parse command line options
 while getopts "bdklc:vh" OPTION
 do
@@ -118,7 +130,7 @@ source "${OPCONF}"
 [ -z "${DOCKER_SERVICES}" ] && echo "DOCKER_SERVICES is not set" && exit 1
 
 # get an alphanumeric name for the containers base on the current working directory
-NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z]//')"
+NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//')"
 
 
 # kill mode
@@ -142,7 +154,6 @@ elif [ -n "${OPLOGS}" ]; then
 
 # in daemon mode we run --detach
 elif [ -n "${OPDAEMON}" ]; then
-  DAEMON=1
   DOCKER_EXTRA["ALL"]+=" --detach"
 
 # if not in daemon mode, then control-c runs a cleanup
@@ -172,24 +183,24 @@ for i in $DOCKER_SERVICES; do
 done
 
 
+# If running -b then build and exit
 if [ -n "${OPBUILD}" ]; then
-  # stop and remove the existing named containers
   cleanup 1
-
-  # build new images
   for i in $DOCKER_SERVICES; do 
-    echo "* Building $i ... (${NAME}_${i}) "
-    docker build -t ${NAME}_${i} ./${i}/
-    if [ $? -ne "0" ]; then
-      echo "*** Build failed: $i ***"
-      exit 1
-    fi
+    build_container ${i}
   done
   exit $?
 fi
 
 
-# run them
+# default is to run the container - but check if it exists first if not, build it
+for i in $DOCKER_SERVICES; do 
+  exists=$(docker images | grep "${NAME}_${i}")
+  if [ -z "${exists}" ]; then
+    build_container ${i}
+  fi
+done
+
 for i in $DOCKER_SERVICES; do 
   echo "* Starting $i ... "
   cmd="docker run ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
@@ -198,7 +209,7 @@ for i in $DOCKER_SERVICES; do
 done
 
 # If not in daemon mode then await a control-c/SIGINT
-if [ -z "${DAEMON}" ]; then
+if [ -z "${OPDAEMON}" ]; then
   listen
 fi
 
