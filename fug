@@ -42,7 +42,7 @@ with bash arrays:
 
 And so on for:
 
-    DOCKER_PORTS, DOCKER_VOLUMES, DOCKER_ROOT, DOCKER_EXTRA
+    DOCKER_PORTS, DOCKER_VOLUMES, DOCKER_ROOT, DOCKER_EXTRA, DOCKER_SERVICES_PATH
 
 The DOCKER_EXTRA array can contain any arbitrary command line
 arguments to the docker run command.
@@ -118,8 +118,14 @@ function listen() {
 function build_container() {
   # build new images
   i=$1
+  local p
   echo "* Building $i ... (${NAME}_${i}) "
-  docker build -t ${NAME}_${i} ./${i}/
+  if [ -n "${DOCKER_SERVICES_PATH[$i]}" ]; then
+    p=${DOCKER_SERVICES_PATH[$i]}
+  else
+    p="./${i}/"
+  fi
+  docker build -t ${NAME}_${i} $p
   if [ "$?" -ne "0" ]; then
     echo "*** Build container failed: $i ***"
     exit 1
