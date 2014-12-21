@@ -1,54 +1,65 @@
 #!/bin/bash
-#
-# fug: faster and uglier than fig.
-#
-# Usage: fug [ARGS]
-#
-# ARGS:
-#
-#   -l show the current logs
-#   -d run the docker containers in daemon mode
-#   -k kill the docker containers
-#   -n specify the name prefix for the containers
-#   -b run the build of the containers
-#
-# fug runs in the foreground by default, printing the containers' logs to the
-# console. The containers can then be stopped with a SIGINT/control-c.
-#
-# If run in daemon mode (-d) it prints the docker build and start messages
-# and then runs in the background. To stop the containers (once fug is in
-# daemon mode) run fug -k. Note you may want to run fug -k with -n ... TODO
-#
-# Additionally the docker logs can be viewed with fug -l.
-#
-# A name prefix for the fug orchestrated docker cluster can be specified with the -n argument,
-# otherwise an alphanumeric form of the current directory name shall be used.
-#
-# If -b the containers will be rebuilt.
-#
-#
-#
-
-# rely on the environment being setup desirably, we care about variables like:
-# DOCKER_SERVICES, DOCKER_LINKS, DOCKER_ENV, DOCKER_PORTS, DOCKER_VOLUMES, DOCKER_ROOT
-if [ -z "$DOCKER_SERVICES" ]; then
-  echo "Environment is missing. Ensure some DOCKER_ vars are set before running this script."
-  exit 1
-fi
 
 
-function reverse() {
-  local out=()
-  while [ $# -gt 0 ]; do
-      out=("$1" "${out[@]}")
-      shift 1
-  done
-  echo "${out[@]}"
+function usage() {
+cat << EOF
+
+fug - faster and uglier than fig.
+
+Builds, starts and stops docker containers. Can also be used to 
+view the containers' log files when fug is invoked in daemon mode.
+
+USAGE:
+
+$(basename $0) [-b|-d|-k|-l|-c] [-v]
+
+OPTIONS:
+   -b      build the services
+   -d      run in daemon mode
+   -k      kill running containers
+   -l      show logs
+   -c      configuration file, default: fug.conf
+   -v      verbose debugging
+   -h      display this help
+
+When run with no arguments, fug will start services in the foreground.
+But remember to build (-b) the services first.
+
+Fug relies on the following environment variable to be set in fug.conf,
+for example:
+
+    DOCKER_SERVICES="test db webapp loadbalancer"
+
+Additional settings for each particular container can be specified
+with bash arrays:
+
+    declare -A DOCKER_LINKS
+    DOCKER_LINKS["webapp"]="db test"
+    DOCKER_LINKS["loadbalancer"]="db test webapp"
+
+    declare -A DOCKER_ENV
+    DOCKER_ENV["db"]="username password hostname"
+
+And so on for:
+
+    DOCKER_PORTS, DOCKER_VOLUMES, DOCKER_ROOT, DOCKER_EXTRA
+
+The DOCKER_EXTRA array can contain any arbitrary command line
+arguments to the docker run command.
+
+To apply a command to all services, use the special service name
+ALL. Eg: DOCKER_EXTRA["ALL"]="--rm"
+
+EOF
 }
 
+
 function cleanup() {
-  local reversed_docker_services=$(reverse $DOCKER_SERVICES)
-  for i in $reversed_docker_services; do 
+  for i in $DOCKER_SERVICES; do
+    reversed="$i $reversed";
+  done
+  # stop services in reverse order
+  for i in $reversed; do 
     echo "Stopping ${NAME}_${i}"
     docker stop ${NAME}_${i} &> /dev/null
     docker rm ${NAME}_${i} &> /dev/null
@@ -59,58 +70,136 @@ function cleanup() {
   fi
 }
 
-# in daemon mode we run --detach
-if [ "$1" = "-d" ]; then
-  DAEMON=1
-  DOCKER_RUN_ARGS+=" --detach"
+function cleanup_logs() {
+  for i in $DOCKER_SERVICES; do
+    id="$(docker ps | grep ${NAME}_${i} | awk '{print $1}')"
+    for i in $id; do
+      if [ -n "${i}" ]; then
+        pid=$(pgrep -f "docker logs -f ${i}")
+        [ -n "${pid}" ] && kill $pid
+      fi
+    done
+  done
+  exit $?
+}
 
-# if not in daemon mode, then control-c runs a cleanup
-else
-  trap cleanup SIGINT
-  DOCKER_RUN_ARGS+=" --rm"
-fi
+function listen() {
+  while true; do
+    read x
+    sleep 1
+  done
+}
 
+# parse command line options
+while getopts "bdklc:vh" OPTION
+do
+  case $OPTION in
+    b) OPBUILD=1 ;;
+    d) OPDAEMON=1 ;;
+    k) OPKILL=1 ;;
+    l) OPLOGS=1 ;;
+    c) OPCONF=$OPTARG ;;
+    v) OPVERBOSE=1 ;;
+    h) OPHELP=1 ;;
+    ?) usage && exit 1 ;;
+  esac
+done
+
+# get the configuration
+[ -z "${OPCONF}" ]    && OPCONF="./fug.conf"
+[ ! -f "${OPCONF}" ]  && echo "No fug.conf file found" && exit 1
+source "${OPCONF}"
+
+# helper monkeys
+[ -n "${OPVERBOSE}" ] && env && set -o xtrace
+[ -n "${OPHELP}" ]    && usage && exit 0
+
+# No services?
+[ -z "${DOCKER_SERVICES}" ] && echo "DOCKER_SERVICES is not set" && exit 1
 
 # get an alphanumeric name for the containers base on the current working directory
 NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z]//')"
 
-# stop and remove the existing named containers
-cleanup 1
+
+# kill mode
+if [ -n "${OPKILL}" ]; then
+  cleanup
+  exit $?
+
+# show logs
+elif [ -n "${OPLOGS}" ]; then
+
+  trap cleanup_logs SIGINT
+  for i in $DOCKER_SERVICES; do
+    id="$(docker ps | grep "${NAME}_${i}" | awk '{print $1}')"
+    if [ -n "${id}" ]; then
+      docker logs -f $id &
+    fi
+  done
+
+  listen
+  exit $?
+
+# in daemon mode we run --detach
+elif [ -n "${OPDAEMON}" ]; then
+  DAEMON=1
+  DOCKER_EXTRA["ALL"]+=" --detach"
+
+# if not in daemon mode, then control-c runs a cleanup
+elif [ -z "${OPBUILD}" ]; then 
+  trap cleanup SIGINT
+  DOCKER_EXTRA["ALL"]+=" --rm"
+fi
+
 
 # build up the command line arguments to docker
 declare -A ARGS
 for i in $DOCKER_SERVICES; do
+
+  [ -n "${DOCKER_LINKS['ALL']}" ]   && ARGS[$i]+=${DOCKER_LINKS['ALL']}
+  [ -n "${DOCKER_ENV['ALL']}" ]     && ARGS[$i]+=${DOCKER_ENV['ALL']}
+  [ -n "${DOCKER_PORTS['ALL']}" ]   && ARGS[$i]+=${DOCKER_PORTS['ALL']}
+  [ -n "${DOCKER_VOLUMES['ALL']}" ] && ARGS[$i]+=${DOCKER_VOLUMES['ALL']}
+  [ -n "${DOCKER_ROOT['ALL']}" ]    && ARGS[$i]+=${DOCKER_ROOT['ALL']}
+  [ -n "${DOCKER_EXTRA['ALL']}" ]   && ARGS[$i]+=${DOCKER_EXTRA['ALL']}
+
   for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
-  for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v"; done
-  for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v"; done
-  for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v"; done
-  for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged"; done
+  for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                 done
+  for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";             done
+  for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";              done
+  for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
+  for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                       done
 done
 
-# build new images
-#if BUILD: TODO
+
+if [ -n "${OPBUILD}" ]; then
+  # stop and remove the existing named containers
+  cleanup 1
+
+  # build new images
   for i in $DOCKER_SERVICES; do 
     echo "* Building $i ... (${NAME}_${i}) "
-    docker build -t ${NAME}_${i} ./${i}
+    docker build -t ${NAME}_${i} ./${i}/
+    if [ $? -ne "0" ]; then
+      echo "*** Build failed: $i ***"
+      exit 1
+    fi
   done
-#fi
+  exit $?
+fi
+
 
 # run them
 for i in $DOCKER_SERVICES; do 
   echo "* Starting $i ... "
-
-  # first check for this services links .. are they up yet? TODO
-
-  cmd="docker run ${DOCKER_RUN_ARGS} ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
+  cmd="docker run ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
   $cmd &
   sleep 1
 done
 
 # If not in daemon mode then await a control-c/SIGINT
-if [ -z "$DAEMON" ]; then
-  while true; do
-    read x
-    sleep 1
-  done
+if [ -z "${DAEMON}" ]; then
+  listen
 fi
+
 
