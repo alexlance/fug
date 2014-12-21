@@ -11,10 +11,10 @@ view the containers' log files when fug is invoked in daemon mode.
 
 USAGE:
 
-$(basename $0) [-b] [-d] [-s] [-l] [-c] [-v]
+$(basename $0) [-b [NAME]] [-d] [-s] [-l] [-c] [-v]
 
 OPTIONS:
-   -b      build the services
+   -b      build service NAME, or all services if not specified
    -d      run in daemon mode
    -s      stop running containers
    -l      show logs
@@ -73,25 +73,34 @@ function cleanup() {
   fi
 }
 
+function killykill() {
+  i=$1
+  id="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
+  for x in $id; do
+    if [ -n "${x}" ]; then
+      docker stop $x
+      docker rm -f $x
+    fi
+  done
+  id="$(docker images | grep ${NAME}_${i} | awk '{print $3}')"
+  for x in $id; do
+    if [ -n "${x}" ]; then
+      docker rmi -f $x
+    fi
+  done
+}
+
 function nuke() {
-  for i in $DOCKER_SERVICES; do
-    reversed="$i $reversed";
-  done
-  for i in $reversed; do 
-    id="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
-    for x in $id; do
-      if [ -n "${x}" ]; then
-        docker stop -t2 $x
-        docker rm -f $x
-      fi
+  if [ -n "$1" ]; then
+    killykill $1
+  else
+    for i in $DOCKER_SERVICES; do
+      reversed="$i $reversed";
     done
-    id="$(docker images | grep ${NAME}_${i} | awk '{print $3}')"
-    for x in $id; do
-      if [ -n "${x}" ]; then
-        docker rmi -f $x
-      fi
+    for i in $reversed; do 
+      killykill $i
     done
-  done
+  fi
 }
 
 
@@ -134,10 +143,10 @@ function build_container() {
 
 
 # parse command line options
-while getopts "bdslc:vh" OPTION
+while getopts "b:dslc:vh" OPTION
 do
   case $OPTION in
-    b) OPBUILD=1 ;;
+    b) OPBUILD=1; OPBUILD_CONTAINER=$OPTARG ;;
     d) OPDAEMON=1 ;;
     s) OPSTOP=1 ;;
     l) OPLOGS=1 ;;
@@ -216,10 +225,15 @@ done
 
 # If running -b then build and exit
 if [ -n "${OPBUILD}" ]; then
-  nuke
-  for i in $DOCKER_SERVICES; do 
-    build_container "$i"
-  done
+  if [ -n "${OPBUILD_CONTAINER}" ]; then
+    nuke ${OPBUILD_CONTAINER}
+    build_container ${OPBUILD_CONTAINER}
+  else
+    nuke
+    for i in $DOCKER_SERVICES; do 
+      build_container "$i"
+    done
+  fi
   exit $?
 fi
 
@@ -233,10 +247,18 @@ for i in $DOCKER_SERVICES; do
 done
 
 for i in $DOCKER_SERVICES; do 
+
+  id=$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')
+  if [ -n "$id" ]; then
+    echo " (stopping $id)"
+    docker stop $id
+    docker rm $id
+  fi
+
   echo "* Starting $i ... "
   cmd="docker run ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
   $cmd &
-  sleep 2
+  sleep 0.5
 done
 
 # If not in daemon mode then await a control-c/SIGINT
