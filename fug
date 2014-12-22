@@ -11,10 +11,11 @@ view the containers' log files when fug is invoked in daemon mode.
 
 USAGE:
 
-$(basename $0) [-b [NAME]] [-d] [-s] [-l] [-c] [-v]
+$(basename $0) [-B] [-b [NAME]] [-d] [-s] [-l] [-c] [-v]
 
 OPTIONS:
-   -b      build service NAME, or all services if not specified
+   -B      build all services
+   -b      build service NAME
    -d      run in daemon mode
    -s      stop running containers
    -l      show logs
@@ -143,9 +144,10 @@ function build_container() {
 
 
 # parse command line options
-while getopts "b:dslc:vh" OPTION
+while getopts "Bb:dslc:vh" OPTION
 do
   case $OPTION in
+    B) OPBUILD=1 ;;
     b) OPBUILD=1; OPBUILD_CONTAINER=$OPTARG ;;
     d) OPDAEMON=1 ;;
     s) OPSTOP=1 ;;
