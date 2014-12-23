@@ -17,7 +17,7 @@ $(basename $0) [-d] [-l] [-c] [-b NAMES] [-s NAMES] [-v] [-h]
 OPTIONS:
    -d                detach and run in daemon mode
    -l                show logs
-   -c                configuration file, default: fug.yml
+   -c FILE           configuration file, default: fug.yml
    -b <NAMES>|ALL    build service(s)
    -s <NAMES>|ALL    stop container(s)
    -v                verbose debugging
@@ -38,7 +38,7 @@ EOF
 
 
 function stop_containers() {
-  for i in $@; do 
+  for i in "$@"; do
     echo "Stopping ${NAME}_${i}"
     kill1 $i
     kill2 $i
@@ -168,7 +168,7 @@ elif [ -n "${OPLOGS}" ]; then
   listen
   exit $?
 
-# in daemon mode we run --detach
+# in daemon mode we run --detach, which backgrounds the docker run commands
 elif [ -n "${OPDAEMON}" ]; then
   DOCKER_EXTRA["ALL"]+=" --detach"
 
@@ -194,6 +194,7 @@ done
 # build up the command line arguments to docker
 declare -A ARGS
 
+# if attributes are a part of the ALL target, then apply them to every target
 for i in $DOCKER_SERVICES; do
   [ -n "${DOCKER_LINKS['ALL']}" ]   && DOCKER_LINKS[$i]+=" ${DOCKER_LINKS['ALL']}"
   [ -n "${DOCKER_ENV['ALL']}" ]     && DOCKER_ENV[$i]+=" ${DOCKER_ENV['ALL']}"
@@ -202,6 +203,7 @@ for i in $DOCKER_SERVICES; do
   [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
 done
 
+# build up command line argument to docker run
 for i in $DOCKER_SERVICES; do
   for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
   for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                 done
