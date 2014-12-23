@@ -1,55 +1,32 @@
 fug
 ===
 
-fug - faster and uglier than fig.
+###fug - faster and uglier than fig.
 
-Builds, starts and stops docker containers. Can also be used to 
-view the containers' log files when fug is invoked in daemon mode.
+Builds, starts and stops docker containers. Can also be used to view the
+containers' log files when fug is invoked in daemon mode. Looks for fug.yml
+for configuration - which is syntactically similar to fig's fig.yml.
 
-### usage
+###USAGE:
 
+    $(basename $0) [-d] [-l] [-c] [-b NAMES] [-s NAMES] [-v] [-h]
 
-    fug [-b|-d|-k|-l|-c] [-v] [-h]
+###OPTIONS:
+    -d                detach and run in daemon mode
+    -l                show logs
+    -c                configuration file, default: fug.yml
+    -b <NAMES>|ALL    build service(s)
+    -s <NAMES>|ALL    stop container(s)
+    -v                verbose debugging
+    -h                display this help
 
-### options:
+When run with no arguments, fug will start services in the foreground. If the
+containers haven't been built yet, fug will attempt to build them.
 
-    -b      build the services
-    -d      run in daemon mode
-    -k      kill running containers
-    -l      show logs
-    -c      configuration file, default: fug.conf
-    -v      verbose debugging
-    -h      display this help
+The fug.yml file also supports environment variables in \${SOMEVAR} format, and
+has an ALL build target, that lets you put settings that should be applied to
+all services. Additionally the special word ALL can be used with -b and -s args.
 
-When run with no arguments, fug will start services in the foreground.
-But remember to build (-b) the services first.
-
-
-### environment
-
-Fug relies on the following environment variable to be set in fug.conf,
-for example:
-
-    DOCKER_SERVICES="test db webapp loadbalancer"
-
-Additional settings for each particular container can be specified
-with bash arrays:
-
-    declare -A DOCKER_LINKS
-    DOCKER_LINKS["webapp"]="db test"
-    DOCKER_LINKS["loadbalancer"]="db test webapp"
-
-    declare -A DOCKER_ENV
-    DOCKER_ENV["db"]="username password hostname"
-
-And so on for:
-
-    DOCKER_PORTS, DOCKER_VOLUMES, DOCKER_ROOT, DOCKER_EXTRA
-
-The DOCKER_EXTRA array can contain any arbitrary command line
-arguments to the docker run command.
-
-To apply a command to all services, use the special service name
-ALL. Eg: DOCKER_EXTRA["ALL"]="--rm"
-
+Fug supports the "docker run --add-host" option through the "hosts" token in the
+fug.yml file.
 
