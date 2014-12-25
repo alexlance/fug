@@ -17,7 +17,7 @@ $(basename $0) [-d] [-l] [-c] [-b NAMES] [-s NAMES] [-v] [-h]
 OPTIONS:
    -d                detach and run in daemon mode
    -l                show logs
-   -c FILE           configuration file, default: fug.yml
+   -c FILE           configuration file, default: ./fug.yml
    -b <NAMES>|ALL    build service(s)
    -s <NAMES>|ALL    stop container(s)
    -v                verbose debugging
@@ -114,6 +114,9 @@ function build_container() {
   fi
 }
 
+# Location of script
+FUGDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 # These are the currently supported fug settings
 declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT DOCKER_PORTS DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH
 
@@ -142,7 +145,7 @@ for i in $DOCKER_SERVICES; do DOCKER_SERVICES_REVERSED="$i $DOCKER_SERVICES_REVE
 
 # get the configuration
 [ -z "${OPCONF}" ]    && OPCONF="./fug.yml"
-[ ! -f "${OPCONF}" ]  && echo "No fug.yml configuration file found" && exit 1
+[ ! -f "${OPCONF}" ]  && echo "No ${OPCONF} configuration file found" && exit 1
 
 
 # get an alphanumeric name for the containers base on the current working directory
@@ -153,9 +156,10 @@ if [ -n "${OPSTOP}" ]; then
   [ "${OPSTOP_CONTAINER}" == "ALL" ] && OPSTOP_CONTAINER=$DOCKER_SERVICES_REVERSED
   stop_containers $OPSTOP_CONTAINER
   exit $?
+fi
 
 # show logs
-elif [ -n "${OPLOGS}" ]; then
+if [ -n "${OPLOGS}" ]; then
 
   trap "{ halt_log ; exit 0; }" SIGINT
   for i in $DOCKER_SERVICES; do
@@ -167,9 +171,11 @@ elif [ -n "${OPLOGS}" ]; then
 
   listen
   exit $?
+fi
+
 
 # in daemon mode we run --detach, which backgrounds the docker run commands
-elif [ -n "${OPDAEMON}" ]; then
+if [ -n "${OPDAEMON}" ]; then
   DOCKER_EXTRA["ALL"]+=" --detach"
 
 # if not in daemon mode, then control-c stops the containers
@@ -180,15 +186,15 @@ fi
 
 
 # parse the fug.yml configuration file
-for i in $(./shyaml keys < fug.yml); do
-  DOCKER_LINKS[$i]+=$(  ./shyaml get-value ${i}.links       < ./fug.yml | sed 's/- / /g')
-  DOCKER_ENV[$i]+=$(    ./shyaml get-value ${i}.environment < ./fug.yml | sed 's/- / /g')
-  DOCKER_EXTRA[$i]+=$(  ./shyaml get-value ${i}.extra       < ./fug.yml | sed 's/- / /g')
-  DOCKER_ROOT[$i]+=$(   ./shyaml get-value ${i}.privileged  < ./fug.yml | sed 's/- / /g')
-  DOCKER_PORTS[$i]+=$(  ./shyaml get-value ${i}.ports       < ./fug.yml | sed 's/- / /g')
-  DOCKER_VOLUMES[$i]+=$(./shyaml get-value ${i}.volumes     < ./fug.yml | sed 's/- / /g')
-  DOCKER_HOSTS[$i]+=$(  ./shyaml get-value ${i}.hosts       < ./fug.yml | sed 's/- / /g')
-  DOCKER_PATH[$i]+=$(   ./shyaml get-value ${i}.build       < ./fug.yml | sed 's/- / /g')
+for i in $(${FUGDIR}/shyaml keys < ${OPCONF}); do
+  DOCKER_LINKS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.links       < ${OPCONF} | sed 's/- / /g')
+  DOCKER_ENV[$i]+=$(    ${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g')
+  DOCKER_EXTRA[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.extra       < ${OPCONF} | sed 's/- / /g')
+  DOCKER_ROOT[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.privileged  < ${OPCONF} | sed 's/- / /g')
+  DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
+  DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
+  DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
+  DOCKER_PATH[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.build       < ${OPCONF} | sed 's/- / /g')
 done
 
 # build up the command line arguments to docker
