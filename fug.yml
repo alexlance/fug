@@ -1,0 +1,45 @@
+contact:
+  environment:
+    - HOST
+    - PATH
+    - USERNAME
+    - PASSWORD
+
+account:
+  environment:
+    - CONTACT_HOST
+  links:
+    - contact
+
+catalog:
+  environment:
+    - HOST
+    - PATH_CAT
+    - USERNAME
+    - PASSWORD
+  links:
+    - account
+    - contact
+
+haproxy:
+  environment:
+    - HAPROXY_PORT
+  volumes:
+    - ${PWD}/haproxy/:/haproxy-override
+  ports:
+    - ${HAPROXY_PORT}:${HAPROXY_PORT}
+  privileged: 1
+  links:
+    - account
+    - catalog
+    - contact
+
+ALL:
+  environment:
+    - PORT
+    - DEBUG
+  hosts:
+    - host1:255.88.333.111
+    - host2:255.88.333.222 
+
+
