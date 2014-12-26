@@ -12,36 +12,96 @@ for configuration - which is syntactically similar to fig's fig.yml.
 
 USAGE:
 
-$(basename $0) [-d] [-l] [-c] [-b NAMES] [-s NAMES] [-v] [-h]
+$(basename $0) [-c FILE] [-d [NAMES]] [-l [NAMES]] [-b [NAMES]] [-s [NAMES]] [-v] [-h]
 
 OPTIONS:
-   -d                detach and run in daemon mode
-   -l                show logs
-   -c FILE           configuration file, default: ./fug.yml
-   -b <NAMES>|ALL    build service(s)
-   -s <NAMES>|ALL    stop container(s)
-   -v                verbose debugging
-   -h                display this help
+   -c FILE          config file, default: ./fug.yml
+   -d [NAMES]       run in daemon mode
+   -l [NAMES]       show logs
+   -b [NAMES]       build services
+   -s [NAMES]       stop containers
+   -n               dry-run
+   -v               verbose debugging
+   -h               display this help
 
-When run with no arguments, fug will start services in the foreground. If the
-containers haven't been built yet, fug will attempt to build them.
+When run with no arguments, fug will start all services (defined by \$DOCKER_SERVICES)
+in the foreground. If the containers haven't been built yet, fug will attempt
+to build them.
 
-The fug.yml file also supports environment variables in \${SOMEVAR} format, and
-has an ALL build target, that lets you put settings that should be applied to
-all services. Additionally the special word ALL can be used with -b and -s args.
+To build, or stop, or run some particular services, use a space separated list of service
+names: eg: fug -d service1 service2; fug -l service1 service2; fug -s service1 service2
 
-Fug supports the "docker run --add-host" option through the "hosts" token in the
-fug.yml file.
+Fug looks for a fug.yml file that defines the manner in which docker run is
+invoked for each service. The fug.yml file supports environment variables in
+\${SOMEVAR} format, and has an ALL build target, that lets you put settings
+that should be applied to all services.
 
 EOF
 }
 
+function get_ops() {
+  # We are reinventing getopts because I want support for optional parameters,
+  # and I want support for space separated non-shell-escaped parameters, eg:
+  # `fug -b target1 target2` and `fug -b`. May I offer a hearty F.U. to getopt,
+  # getopts et al, get off my lawn!
+  declare -A FP_START FP_END
+  local FLAG=""
+  local k=0
+
+  for i in $@; do
+    let k=k+1
+    if [ "${i:0:1}" == "-" ]; then
+      [ -n "${FLAG}" ] && FP_END[$FLAG]=$(($k-${FP_START[$FLAG]}))
+      FLAG=${i}
+      FP_START[$FLAG]=$(($k+1))
+    fi
+    [ -n "${FLAG}" ] && [ -z ${FP_END[$FLAG]} ] && FP_END[$FLAG]=${#@}
+  done
+
+  for f in ${!FP_START[@]}; do
+    if [ -n "${FP_START[$f]}" ]; then
+      v=${@:${FP_START[$f]}:${FP_END[$f]}}
+      CLI[$f]=${v:-"SET_BUT_NO_VALUE"}
+    fi
+  done
+}
+
+function get_docker_run_args() {
+  # parse the fug.yml configuration file
+  for i in $(${FUGDIR}/shyaml keys < ${OPCONF}); do
+    DOCKER_LINKS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.links       < ${OPCONF} | sed 's/- / /g')
+    DOCKER_ENV[$i]+=$(    ${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g')
+    DOCKER_EXTRA[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.extra       < ${OPCONF} | sed 's/- / /g')
+    DOCKER_ROOT[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.privileged  < ${OPCONF} | sed 's/- / /g')
+    DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
+    DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
+    DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
+    DOCKER_PATH[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.build       < ${OPCONF} | sed 's/- / /g')
+  done
+
+  # if attributes are a part of the ALL target, then apply them to every target
+  for i in $DOCKER_SERVICES; do
+    [ -n "${DOCKER_LINKS['ALL']}" ]   && DOCKER_LINKS[$i]+=" ${DOCKER_LINKS['ALL']}"
+    [ -n "${DOCKER_ENV['ALL']}" ]     && DOCKER_ENV[$i]+=" ${DOCKER_ENV['ALL']}"
+    [ -n "${DOCKER_PORTS['ALL']}" ]   && DOCKER_PORTS[$i]+=" ${DOCKER_PORTS['ALL']}"
+    [ -n "${DOCKER_VOLUMES['ALL']}" ] && DOCKER_VOLUMES[$i]+=" ${DOCKER_VOLUMES['ALL']}"
+    [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
+  done
+
+  # build up command line argument to docker run
+  for i in $DOCKER_SERVICES; do
+    for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
+    for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                 done
+    for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";             done
+    for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";              done
+    for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
+    for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                       done
+  done
+}
 
 function stop_containers() {
   for i in "$@"; do
-    echo "Stopping ${NAME}_${i}"
     kill1 $i
-    kill2 $i
   done
 }
 
@@ -50,8 +110,8 @@ function kill1() {
   local id="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
   for x in $id; do
     if [ -n "${x}" ]; then
-      echo " * Stopping $x"
-      docker stop $x
+      echo " * Stopping ${NAME}_${i} ($x)"
+      docker stop $x > /dev/null
     fi
   done
 }
@@ -61,7 +121,7 @@ function kill2() {
   local id="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
   for x in $id; do
     if [ -n "${x}" ]; then
-      echo " * Removing $x"
+      echo " * Removing ${NAME}_${i} ($x)"
       docker rm -f $x
     fi
   done
@@ -72,14 +132,15 @@ function kill3() {
   local id="$(docker images | grep ${NAME}_${i} | awk '{print $3}')"
   for x in $id; do
     if [ -n "${x}" ]; then
-      echo " * Removing image $x"
+      echo " * Removing image ${NAME}_${i} ($x)"
       docker rmi -f $x
     fi
   done
 }
 
 function halt_log() {
-  for i in $DOCKER_SERVICES; do
+  services=$@
+  for i in $services; do
     local id="$(docker ps | grep ${NAME}_${i} | awk '{print $1}')"
     for i in $id; do
       if [ -n "${i}" ]; then
@@ -114,34 +175,52 @@ function build_container() {
   fi
 }
 
+# These are the currently supported docker settings
+declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT
+declare -A DOCKER_PORTS DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH
+
+# build up the command line arguments to docker
+declare -A ARGS
+
 # Location of script
 FUGDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
-# These are the currently supported fug settings
-declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT DOCKER_PORTS DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH
-
-# parse command line options
-while getopts "b:dSs:lc:vh" OPTION
-do
-  case $OPTION in
-    b) OPBUILD=1; OPBUILD_CONTAINER=$OPTARG ;;
-    d) OPDAEMON=1 ;;
-    s) OPSTOP=1; OPSTOP_CONTAINER=$OPTARG ;;
-    l) OPLOGS=1 ;;
-    c) OPCONF=$OPTARG ;;
-    v) OPVERBOSE=1 ;;
-    h) OPHELP=1 ;;
-    ?) usage && exit 1 ;;
-  esac
-done
-
-# helper monkeys
-[ -n "${OPVERBOSE}" ] && env && set -o xtrace
-[ -n "${OPHELP}" ]    && usage && exit 0
 
 # No services?
 [ -z "${DOCKER_SERVICES}" ] && echo "DOCKER_SERVICES is not set" && exit 1
 for i in $DOCKER_SERVICES; do DOCKER_SERVICES_REVERSED="$i $DOCKER_SERVICES_REVERSED"; done
+
+
+# Setup the valid cli options and their defaults
+declare -A CLI CLI_DEFAULTS
+CLI_DEFAULTS["-d"]=$DOCKER_SERVICES
+CLI_DEFAULTS["-l"]=$DOCKER_SERVICES
+CLI_DEFAULTS["-b"]=$DOCKER_SERVICES_REVERSED
+CLI_DEFAULTS["-s"]=$DOCKER_SERVICES_REVERSED
+
+# load command line arguments up
+get_ops "$@"
+
+# basic validation and defaults setting of cli args
+for f in ${!CLI[@]}; do
+  [ -z "${CLI_DEFAULTS[$f]}" ] && echo "not supported: $f" && exit 1
+  if [ "${CLI[$f]}" == "SET_BUT_NO_VALUE" ]; then
+    CLI[$f]=${CLI_DEFAULTS[$f]}
+  fi
+done
+
+# this is the definitive list of command line arguments for fug
+[ -n "${CLI["-c"]}" ] && OPCONF=${CLI["-c"]}
+[ -n "${CLI["-d"]}" ] && OPDAEMON=${CLI["-d"]}
+[ -n "${CLI["-l"]}" ] && OPLOGS=${CLI["-l"]}
+[ -n "${CLI["-b"]}" ] && OPBUILD=${CLI["-b"]}
+[ -n "${CLI["-s"]}" ] && OPSTOP=${CLI["-s"]}
+[ -n "${CLI["-n"]}" ] && OPDRYRUN=1
+[ -n "${CLI["-v"]}" ] && OPVERBOSE=1
+[ -n "${CLI["-h"]}" ] && OPHELP=1
+
+# helper monkeys
+[ -n "${OPVERBOSE}" ] && env && set -o xtrace
+[ -n "${OPHELP}" ]    && usage && exit 0
 
 # get the configuration
 [ -z "${OPCONF}" ]    && OPCONF="./fug.yml"
@@ -153,23 +232,27 @@ NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//')"
 
 # kill mode
 if [ -n "${OPSTOP}" ]; then
-  [ "${OPSTOP_CONTAINER}" == "ALL" ] && OPSTOP_CONTAINER=$DOCKER_SERVICES_REVERSED
-  stop_containers $OPSTOP_CONTAINER
+  stop_containers ${OPSTOP}
   exit $?
 fi
 
 # show logs
 if [ -n "${OPLOGS}" ]; then
 
-  trap "{ halt_log ; exit 0; }" SIGINT
-  for i in $DOCKER_SERVICES; do
+  trap "{ halt_log ${OPLOGS} ; exit 0; }" SIGINT
+  for i in ${OPLOGS}; do
     id="$(docker ps | grep "${NAME}_${i}" | awk '{print $1}')"
     if [ -n "${id}" ]; then
       docker logs -f $id &
+      go=1
+    else
+      echo "Not started: ${NAME}_${i}"
     fi
   done
 
-  listen
+  if [ -n "${go}" ]; then 
+    listen
+  fi
   exit $?
 fi
 
@@ -177,76 +260,43 @@ fi
 # in daemon mode we run --detach, which backgrounds the docker run commands
 if [ -n "${OPDAEMON}" ]; then
   DOCKER_EXTRA["ALL"]+=" --detach"
+  get_docker_run_args
 
 # if not in daemon mode, then control-c stops the containers
 elif [ -z "${OPBUILD}" ]; then 
   trap "{ stop_containers ${DOCKER_SERVICES_REVERSED}; exit 0; }" SIGINT
   DOCKER_EXTRA["ALL"]+=" --rm"
+  get_docker_run_args
 fi
 
 
-# parse the fug.yml configuration file
-for i in $(${FUGDIR}/shyaml keys < ${OPCONF}); do
-  DOCKER_LINKS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.links       < ${OPCONF} | sed 's/- / /g')
-  DOCKER_ENV[$i]+=$(    ${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g')
-  DOCKER_EXTRA[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.extra       < ${OPCONF} | sed 's/- / /g')
-  DOCKER_ROOT[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.privileged  < ${OPCONF} | sed 's/- / /g')
-  DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
-  DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
-  DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
-  DOCKER_PATH[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.build       < ${OPCONF} | sed 's/- / /g')
-done
-
-# build up the command line arguments to docker
-declare -A ARGS
-
-# if attributes are a part of the ALL target, then apply them to every target
-for i in $DOCKER_SERVICES; do
-  [ -n "${DOCKER_LINKS['ALL']}" ]   && DOCKER_LINKS[$i]+=" ${DOCKER_LINKS['ALL']}"
-  [ -n "${DOCKER_ENV['ALL']}" ]     && DOCKER_ENV[$i]+=" ${DOCKER_ENV['ALL']}"
-  [ -n "${DOCKER_PORTS['ALL']}" ]   && DOCKER_PORTS[$i]+=" ${DOCKER_PORTS['ALL']}"
-  [ -n "${DOCKER_VOLUMES['ALL']}" ] && DOCKER_VOLUMES[$i]+=" ${DOCKER_VOLUMES['ALL']}"
-  [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
-done
-
-# build up command line argument to docker run
-for i in $DOCKER_SERVICES; do
-  for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
-  for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                 done
-  for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";             done
-  for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";              done
-  for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
-  for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                       done
-done
-
-
 # If running -b then build and exit
-if [ -n "${OPBUILD}" ] && [ -n "${OPBUILD_CONTAINER}" ]; then
-  [ "${OPBUILD_CONTAINER}" == "ALL" ] && OPBUILD_CONTAINER=$DOCKER_SERVICES_REVERSED
-
-  for i in $OPBUILD_CONTAINER; do
+if [ -n "${OPBUILD}" ]; then
+  for i in ${OPBUILD}; do
     kill1 ${i}
     kill2 ${i}
     kill3 ${i}
   done
-  for i in $OPBUILD_CONTAINER; do
+  for i in ${OPBUILD}; do
     build_container ${i}
   done
   exit $?
 fi
 
+services=$DOCKER_SERVICES
+[ -n "${OPDAEMON}" ] && services=${OPDAEMON}
 
 # default is to run the container - but check if it exists first if not, build it
-for i in $DOCKER_SERVICES; do 
+for i in $services; do 
   exists=$(docker images | grep "${NAME}_${i}")
   if [ -z "${exists}" ]; then
     build_container ${i}
   fi
 done
 
-for i in $DOCKER_SERVICES; do 
+for i in $services; do 
   kill1 $i
-  kill2 $i
+  kill2 $i # need to do this because we're going to re-use the names
 
   echo "* Starting $i ... "
   cmd="docker run ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
