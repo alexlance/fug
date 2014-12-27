@@ -11,12 +11,11 @@ files. Uses ./fug.yml for configuration, which is syntactically similar to Fig's
 Why not fig?
 ------------
 
-1. I don't like fig.
-2. It feels slow. See 1.
-3. No support for `docker run --add-host` (yet)
-4. Bad debugging experiences
-5. No support for environment variables in the config file.
-6. Can't stop and start individual containers without bringing down all of them, ridiculous!
+1. I just don't like fig.
+2. No support for `docker run --add-host` (yet).
+3. Bad debugging experiences.
+4. No support for environment variables in the config file.
+5. Can't stop and start individual containers without bringing down all of them, ridiculous!
 
 
 Usage
@@ -66,12 +65,12 @@ in the foreground. If the containers haven't been built yet, fug will attempt to
 them.
 
 If no list of NAMES is specified, then the operation will apply to ALL services. Eg:
-`fug -b && fug -d && fug -l` will build, run/daemonize, and display the logs of, ALL
+`fug -b && fug -d && fug -l` will build, run/daemonize, and display the logs of all
 the services defined in the fug.yml file.
 
 Fug looks for a fug.yml file that defines the manner in which `docker run` is invoked for
 each service. The fug.yml file supports environment variables in ${SOMEVAR} format and
-has an ALL build target for settings that should be applied to all services. See the
+has an ALL build target for settings that should be applied to all services. See the 
 fug.yml file in this repo for an example.
 
 
