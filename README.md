@@ -35,6 +35,29 @@ Options
     -v              verbose debugging
     -h              display this help
 
+Examples
+--------
+
+    # build all services defined in $DOCKER_SERVICES
+    fug -b
+
+    # build only some particular services (the -b, -d, -s
+    # and -l args can all accept a list of service names)
+    fug -b web db loadb
+
+    # run all services (hit ctrl-c/SIGINT to stop them)
+    fug
+
+    # run the services in daemon mode (fug -s to stop them)
+    fug -d
+
+    # inspect the logfiles of the web service
+    fug -l web
+
+    # inspect all logfiles
+    fug -l
+
+
 Info
 ----
 
@@ -42,15 +65,14 @@ When run with no arguments, fug will start all services (defined by $DOCKER_SERV
 in the foreground. If the containers haven't been built yet, fug will attempt to build
 them.
 
-To build, run, or stop some particular services, use a space separated list of service
-NAMES: eg: `fug -d service1 service2; fug -l service1 service2; fug -s service1 service2`
-
 If no list of NAMES is specified, then the operation will apply to ALL services. Eg:
-`fug -b; fug -d; fug -l`
+`fug -b && fug -d && fug -l` will build, run/daemonize, and display the logs of, ALL
+the services defined in the fug.yml file.
 
-Fug looks for a fug.yml file that defines the manner in which docker run is invoked for
+Fug looks for a fug.yml file that defines the manner in which `docker run` is invoked for
 each service. The fug.yml file supports environment variables in ${SOMEVAR} format and
-has an ALL build target for settings that should be applied to all services.
+has an ALL build target for settings that should be applied to all services. See the
+fug.yml file in this repo for an example.
 
 
 Finally
