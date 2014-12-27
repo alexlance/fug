@@ -21,7 +21,7 @@ Why not fig?
 Usage
 -----
 
-    $(basename $0) [-c FILE] [-d [NAMES]] [-l [NAMES]] [-b [NAMES]] [-s [NAMES]] [-v] [-h]
+    fug [-c FILE] [-d [NAMES]] [-l [NAMES]] [-b [NAMES]] [-s [NAMES]] [-v] [-h]
 
 Options
 -------
