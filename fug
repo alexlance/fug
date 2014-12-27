@@ -1,40 +1,40 @@
 #!/bin/bash
 
-
 function usage() {
 cat << EOF
 
 fug - faster and uglier than fig.
 
-Builds, starts and stops docker containers. Can also be used to view the
-containers' log files when fug is invoked in daemon mode. Looks for fug.yml
-for configuration - which is syntactically similar to fig's fig.yml.
+Builds, starts and stops docker containers. Can also be used to view the docker log
+files. Uses ./fug.yml for configuration, which is similar syntactically to Fig's fig.yml.
 
 USAGE:
 
-$(basename $0) [-c FILE] [-d [NAMES]] [-l [NAMES]] [-b [NAMES]] [-s [NAMES]] [-v] [-h]
+    $(basename $0) [-c FILE] [-d [NAMES]] [-l [NAMES]] [-b [NAMES]] [-s [NAMES]] [-v] [-h]
 
 OPTIONS:
-   -c FILE          config file, default: ./fug.yml
-   -d [NAMES]       run in daemon mode
-   -l [NAMES]       show logs
-   -b [NAMES]       build services
-   -s [NAMES]       stop containers
-   -n               dry-run
-   -v               verbose debugging
-   -h               display this help
+
+    -c FILE         config file, default: ./fug.yml
+    -d [NAMES]      run in daemon mode
+    -l [NAMES]      show logs
+    -b [NAMES]      build services
+    -s [NAMES]      stop containers
+    -v              verbose debugging
+    -h              display this help
 
 When run with no arguments, fug will start all services (defined by \$DOCKER_SERVICES)
-in the foreground. If the containers haven't been built yet, fug will attempt
-to build them.
+in the foreground. If the containers haven't been built yet, fug will attempt to build
+them.
 
-To build, or stop, or run some particular services, use a space separated list of service
-names: eg: fug -d service1 service2; fug -l service1 service2; fug -s service1 service2
+To build, run, or stop some particular services, use a space separated list of service
+NAMES: eg: fug -d service1 service2; fug -l service1 service2; fug -s service1 service2
 
-Fug looks for a fug.yml file that defines the manner in which docker run is
-invoked for each service. The fug.yml file supports environment variables in
-\${SOMEVAR} format, and has an ALL build target, that lets you put settings
-that should be applied to all services.
+If no list of NAMES is specified, then the operation will apply to ALL services. Eg:
+fug -b; fug -d; fug -l
+
+Fug looks for a fug.yml file that defines the manner in which docker run is invoked for
+each service. The fug.yml file supports environment variables in \${SOMEVAR} format and
+has an ALL build target for settings that should be applied to all services.
 
 EOF
 }
@@ -42,9 +42,13 @@ EOF
 function get_ops() {
   # We are reinventing getopts because I want support for optional parameters,
   # and I want support for space separated non-shell-escaped parameters, eg:
-  # `fug -b target1 target2` and `fug -b`. May I offer a hearty F.U. to getopt,
-  # getopts et al, get off my lawn!
-  declare -A FP_START FP_END
+  # fug -b target1 target2 and fug -b. May I offer a hearty F.U. to getopts,
+  # getopt et al, get off my lawn!
+  #
+  # This function populates the global associative array $CLI of the users
+  # command line arguments, eg: CLI["-d"]="arg1 arg2"
+
+  local -A FP_START FP_END
   local FLAG=""
   local k=0
 
@@ -60,8 +64,40 @@ function get_ops() {
 
   for f in ${!FP_START[@]}; do
     if [ -n "${FP_START[$f]}" ]; then
-      v=${@:${FP_START[$f]}:${FP_END[$f]}}
-      CLI[$f]=${v:-"SET_BUT_NO_VALUE"}
+      CLI[$f]=${@:${FP_START[$f]}:${FP_END[$f]}}
+    fi
+  done
+}
+
+# if the flag isn't in here, then it ain't valid
+function validate_ops() {
+  local -A CLI_VALID CLI_MANDATORY
+  # ooh aren't we cheeky, generating the valid cli options from the usage function
+  while read -r line; do
+    local f=$(echo "$line" | grep -Eo '^\s*-[A-Za-z]')
+    local t=$(echo "$line" | grep -Eo '^\s*-[A-Za-z] [A-Za-z]')
+    [ "$f" ] && CLI_VALID[$f]=1
+    [ "$t" ] && CLI_MANDATORY[$f]=1
+  done <<< "$(usage)"
+
+  # loop through the switches the user has typed in
+  for i in ${!CLI[@]}; do
+    [ -z "${CLI_VALID[$i]}" ] && echo "not supported: $i" && exit 1
+    [ "${CLI_MANDATORY[$i]}" ] && [ -z "${CLI[$i]}" ] && echo "empty value for: $i" && exit 1
+  done
+}
+
+# when a flag is supplied without args
+function default_ops() {
+  local -A CLI_DEFAULTS
+  CLI_DEFAULTS["-d"]=$DOCKER_SERVICES
+  CLI_DEFAULTS["-l"]=$DOCKER_SERVICES
+  CLI_DEFAULTS["-b"]=$DOCKER_SERVICES_REVERSED
+  CLI_DEFAULTS["-s"]=$DOCKER_SERVICES_REVERSED
+
+  for f in ${!CLI[@]}; do
+    if [ -z "${CLI[$f]}" ] && [ "${CLI_DEFAULTS[$f]}" ]; then
+      CLI[$f]=${CLI_DEFAULTS[$f]}
     fi
   done
 }
@@ -100,15 +136,16 @@ function get_docker_run_args() {
 }
 
 function stop_containers() {
-  for i in "$@"; do
+  local services=$@
+  for i in $services; do
     kill1 $i
   done
 }
 
 function kill1() {
   local i=$1
-  local id="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
-  for x in $id; do
+  local ids="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
+  for x in $ids; do
     if [ -n "${x}" ]; then
       echo " * Stopping ${NAME}_${i} ($x)"
       docker stop $x > /dev/null
@@ -118,8 +155,8 @@ function kill1() {
 
 function kill2() {
   local i=$1
-  local id="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
-  for x in $id; do
+  local ids="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
+  for x in $ids; do
     if [ -n "${x}" ]; then
       echo " * Removing ${NAME}_${i} ($x)"
       docker rm -f $x
@@ -129,8 +166,8 @@ function kill2() {
 
 function kill3() {
   local i=$1
-  local id="$(docker images | grep ${NAME}_${i} | awk '{print $3}')"
-  for x in $id; do
+  local ids="$(docker images | grep ${NAME}_${i} | awk '{print $3}')"
+  for x in $ids; do
     if [ -n "${x}" ]; then
       echo " * Removing image ${NAME}_${i} ($x)"
       docker rmi -f $x
@@ -141,8 +178,8 @@ function kill3() {
 function halt_log() {
   services=$@
   for i in $services; do
-    local id="$(docker ps | grep ${NAME}_${i} | awk '{print $1}')"
-    for i in $id; do
+    local ids="$(docker ps | grep ${NAME}_${i} | awk '{print $1}')"
+    for i in $ids; do
       if [ -n "${i}" ]; then
         local pid=$(pgrep -f "docker logs -f ${i}")
         [ -n "${pid}" ] && kill $pid
@@ -179,7 +216,7 @@ function build_container() {
 declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT
 declare -A DOCKER_PORTS DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH
 
-# build up the command line arguments to docker
+# where `docker run` cli options are constructed
 declare -A ARGS
 
 # Location of script
@@ -189,34 +226,21 @@ FUGDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [ -z "${DOCKER_SERVICES}" ] && echo "DOCKER_SERVICES is not set" && exit 1
 for i in $DOCKER_SERVICES; do DOCKER_SERVICES_REVERSED="$i $DOCKER_SERVICES_REVERSED"; done
 
-
 # Setup the valid cli options and their defaults
-declare -A CLI CLI_DEFAULTS
-CLI_DEFAULTS["-d"]=$DOCKER_SERVICES
-CLI_DEFAULTS["-l"]=$DOCKER_SERVICES
-CLI_DEFAULTS["-b"]=$DOCKER_SERVICES_REVERSED
-CLI_DEFAULTS["-s"]=$DOCKER_SERVICES_REVERSED
-
-# load command line arguments up
+declare -A CLI
 get_ops "$@"
+validate_ops
+default_ops
 
-# basic validation and defaults setting of cli args
-for f in ${!CLI[@]}; do
-  [ -z "${CLI_DEFAULTS[$f]}" ] && echo "not supported: $f" && exit 1
-  if [ "${CLI[$f]}" == "SET_BUT_NO_VALUE" ]; then
-    CLI[$f]=${CLI_DEFAULTS[$f]}
-  fi
-done
-
-# this is the definitive list of command line arguments for fug
-[ -n "${CLI["-c"]}" ] && OPCONF=${CLI["-c"]}
-[ -n "${CLI["-d"]}" ] && OPDAEMON=${CLI["-d"]}
-[ -n "${CLI["-l"]}" ] && OPLOGS=${CLI["-l"]}
-[ -n "${CLI["-b"]}" ] && OPBUILD=${CLI["-b"]}
-[ -n "${CLI["-s"]}" ] && OPSTOP=${CLI["-s"]}
-[ -n "${CLI["-n"]}" ] && OPDRYRUN=1
-[ -n "${CLI["-v"]}" ] && OPVERBOSE=1
-[ -n "${CLI["-h"]}" ] && OPHELP=1
+# make the ops slightly easier to read. The +q hack permits
+# checking for array keys that have empty values
+[ -n "${CLI["-c"]+q}" ] && OPCONF=${CLI["-c"]}
+[ -n "${CLI["-d"]+q}" ] && OPDAEMON=${CLI["-d"]}
+[ -n "${CLI["-l"]+q}" ] && OPLOGS=${CLI["-l"]}
+[ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}
+[ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}
+[ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1
+[ -n "${CLI["-h"]+q}" ] && OPHELP=1
 
 # helper monkeys
 [ -n "${OPVERBOSE}" ] && env && set -o xtrace
@@ -224,8 +248,7 @@ done
 
 # get the configuration
 [ -z "${OPCONF}" ]    && OPCONF="./fug.yml"
-[ ! -f "${OPCONF}" ]  && echo "No ${OPCONF} configuration file found" && exit 1
-
+[ ! -f "${OPCONF}" ]  && echo "no configuration file found: ${OPCONF}" && exit 1
 
 # get an alphanumeric name for the containers base on the current working directory
 NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//')"
@@ -249,10 +272,7 @@ if [ -n "${OPLOGS}" ]; then
       echo "Not started: ${NAME}_${i}"
     fi
   done
-
-  if [ -n "${go}" ]; then 
-    listen
-  fi
+  [ -n "${go}" ] && listen
   exit $?
 fi
 
@@ -260,13 +280,11 @@ fi
 # in daemon mode we run --detach, which backgrounds the docker run commands
 if [ -n "${OPDAEMON}" ]; then
   DOCKER_EXTRA["ALL"]+=" --detach"
-  get_docker_run_args
 
 # if not in daemon mode, then control-c stops the containers
-elif [ -z "${OPBUILD}" ]; then 
+elif [ -z "${OPBUILD}" ]; then
   trap "{ stop_containers ${DOCKER_SERVICES_REVERSED}; exit 0; }" SIGINT
   DOCKER_EXTRA["ALL"]+=" --rm"
-  get_docker_run_args
 fi
 
 
@@ -287,16 +305,17 @@ services=$DOCKER_SERVICES
 [ -n "${OPDAEMON}" ] && services=${OPDAEMON}
 
 # default is to run the container - but check if it exists first if not, build it
-for i in $services; do 
+for i in $services; do
   exists=$(docker images | grep "${NAME}_${i}")
   if [ -z "${exists}" ]; then
     build_container ${i}
   fi
 done
 
-for i in $services; do 
+get_docker_run_args
+for i in $services; do
   kill1 $i
-  kill2 $i # need to do this because we're going to re-use the names
+  kill2 $i # need to do this because we re-use the names
 
   echo "* Starting $i ... "
   cmd="docker run ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
