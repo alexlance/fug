@@ -119,9 +119,12 @@ function get_docker_run_args() {
   for i in $DOCKER_SERVICES; do
     [ -n "${DOCKER_LINKS['ALL']}" ]   && DOCKER_LINKS[$i]+=" ${DOCKER_LINKS['ALL']}"
     [ -n "${DOCKER_ENV['ALL']}" ]     && DOCKER_ENV[$i]+=" ${DOCKER_ENV['ALL']}"
+    [ -n "${DOCKER_EXTRA['ALL']}" ]   && DOCKER_EXTRA[$i]+=" ${DOCKER_EXTRA['ALL']}"
+    [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
     [ -n "${DOCKER_PORTS['ALL']}" ]   && DOCKER_PORTS[$i]+=" ${DOCKER_PORTS['ALL']}"
     [ -n "${DOCKER_VOLUMES['ALL']}" ] && DOCKER_VOLUMES[$i]+=" ${DOCKER_VOLUMES['ALL']}"
-    [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
+    [ -n "${DOCKER_HOSTS['ALL']}" ]   && DOCKER_HOSTS[$i]+=" ${DOCKER_HOSTS['ALL']}"
+    [ -n "${DOCKER_PATH['ALL']}" ]    && DOCKER_PATH[$i]+=" ${DOCKER_PATH['ALL']}"
   done
 
   # build up command line argument to docker run
@@ -131,6 +134,7 @@ function get_docker_run_args() {
     for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";             done
     for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";              done
     for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
+    for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";            done
     for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                       done
   done
 }
