@@ -11,11 +11,10 @@ files. Uses ./fug.yml for configuration, which is syntactically similar to Fig's
 Why not fig?
 ------------
 
-1. I just don't like fig.
-2. No support for `docker run --add-host` (yet).
-3. Bad debugging experiences.
-4. No support for environment variables in the config file.
-5. Can't stop and start individual containers without bringing down all of them, ridiculous!
+1. Fig doesn't seem to have support for `docker run --add-host` (yet?)
+2. I haven't had very good debugging experiences with fig.
+3. No support for environment variables in fig's config file.
+4. Can't stop, build and restart individual containers without bringing down all of them.
 
 
 Usage
