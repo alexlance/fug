@@ -19,6 +19,7 @@ OPTIONS:
     -l [NAMES]      show logs
     -b [NAMES]      build services
     -s [NAMES]      stop containers
+    -S [NAMES]      stop containers, remove images
     -v              verbose debugging
     -h              display this help
 
@@ -94,6 +95,7 @@ function default_ops() {
   CLI_DEFAULTS["-l"]=$DOCKER_SERVICES
   CLI_DEFAULTS["-b"]=$DOCKER_SERVICES_REVERSED
   CLI_DEFAULTS["-s"]=$DOCKER_SERVICES_REVERSED
+  CLI_DEFAULTS["-S"]=$DOCKER_SERVICES_REVERSED
 
   for f in ${!CLI[@]}; do
     if [ -z "${CLI[$f]}" ] && [ "${CLI_DEFAULTS[$f]}" ]; then
@@ -143,6 +145,15 @@ function stop_containers() {
   local services=$@
   for i in $services; do
     kill1 $i
+  done
+}
+
+function kill_containers() {
+  local services=$@
+  for i in $services; do
+    kill1 $i
+    kill2 $i
+    kill3 $i
   done
 }
 
@@ -243,6 +254,7 @@ default_ops
 [ -n "${CLI["-l"]+q}" ] && OPLOGS=${CLI["-l"]}
 [ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}
 [ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}
+[ -n "${CLI["-S"]+q}" ] && OPKILL=${CLI["-S"]}
 [ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1
 [ -n "${CLI["-h"]+q}" ] && OPHELP=1
 
@@ -257,9 +269,15 @@ default_ops
 # get an alphanumeric name for the containers base on the current working directory
 NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//')"
 
-# kill mode
+# stop mode
 if [ -n "${OPSTOP}" ]; then
   stop_containers ${OPSTOP}
+  exit $?
+fi
+
+# kill mode
+if [ -n "${OPKILL}" ]; then
+  kill_containers ${OPKILL}
   exit $?
 fi
 
@@ -288,11 +306,7 @@ fi
 
 # If running -b then build and exit
 if [ -n "${OPBUILD}" ]; then
-  for i in ${OPBUILD}; do
-    kill1 ${i}
-    kill2 ${i}
-    kill3 ${i}
-  done
+  kill_containers ${OPBUILD}
   for i in ${OPBUILD}; do
     build_container ${i}
   done
