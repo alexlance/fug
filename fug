@@ -203,7 +203,7 @@ function build_container() {
   # build new images
   local i=$1
   local p
-  echo "* Building $i ... (${NAME}_${i}) "
+  echo " * Building $i (${NAME}_${i}) "
   if [ -n "${DOCKER_PATH[$i]}" ]; then
     p=${DOCKER_PATH[$i]}
   else
@@ -211,7 +211,7 @@ function build_container() {
   fi
   docker build -t ${NAME}_${i} $p
   if [ "$?" -ne "0" ]; then
-    echo "*** Build container failed: $i ***"
+    echo "*** Build container failed: $i"
     exit 1
   fi
 }
@@ -314,7 +314,7 @@ get_docker_run_args
 for i in $services; do
   kill1 $i
 
-  echo "* Starting $i ... "
+  echo " * Starting $i"
   cmd="docker run --rm ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
   if [ -z "${OPDAEMON}" ]; then
     $cmd &
