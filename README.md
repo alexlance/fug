@@ -30,6 +30,7 @@ Options
     -l [NAMES]      show logs
     -b [NAMES]      build services
     -s [NAMES]      stop containers
+    -S [NAMES]      stop containers, remove images
     -v              verbose debugging
     -h              display this help
 
