@@ -281,16 +281,10 @@ if [ -n "${OPLOGS}" ]; then
 fi
 
 
-# in daemon mode we run --detach, which backgrounds the docker run commands
-if [ -n "${OPDAEMON}" ]; then
-  DOCKER_EXTRA["ALL"]+=" --detach"
-
-# if not in daemon mode, then control-c stops the containers
-elif [ -z "${OPBUILD}" ]; then
+# if not building and not in daemon mode, then control-c stops the containers
+if [ -z "${OPBUILD}" ] && [ -z "${OPDAEMON}" ] ; then
   trap "{ stop_containers ${DOCKER_SERVICES_REVERSED}; exit 0; }" SIGINT
-  DOCKER_EXTRA["ALL"]+=" --rm"
 fi
-
 
 # If running -b then build and exit
 if [ -n "${OPBUILD}" ]; then
@@ -319,11 +313,14 @@ done
 get_docker_run_args
 for i in $services; do
   kill1 $i
-  kill2 $i # need to do this because we re-use the names
 
   echo "* Starting $i ... "
-  cmd="docker run ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
-  $cmd &
+  cmd="docker run --rm ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
+  if [ -z "${OPDAEMON}" ]; then
+    $cmd &
+  else
+    nohup $cmd > /dev/null 2>&1 &
+  fi
   sleep 0.5
 done
 
