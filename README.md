@@ -29,6 +29,7 @@ Options
     -d [NAMES]      run in daemon mode
     -l [NAMES]      show logs
     -b [NAMES]      build services
+    -B [NAMES]      build services, without using cache
     -s [NAMES]      stop containers
     -S [NAMES]      stop containers, remove images
     -v              verbose debugging

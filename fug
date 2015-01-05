@@ -18,6 +18,7 @@ OPTIONS:
     -d [NAMES]      run in daemon mode
     -l [NAMES]      show logs
     -b [NAMES]      build services
+    -B [NAMES]      build services, without using cache
     -s [NAMES]      stop containers
     -S [NAMES]      stop containers, remove images
     -v              verbose debugging
@@ -94,6 +95,7 @@ function default_ops() {
   CLI_DEFAULTS["-d"]=$DOCKER_SERVICES
   CLI_DEFAULTS["-l"]=$DOCKER_SERVICES
   CLI_DEFAULTS["-b"]=$DOCKER_SERVICES_REVERSED
+  CLI_DEFAULTS["-B"]=$DOCKER_SERVICES_REVERSED
   CLI_DEFAULTS["-s"]=$DOCKER_SERVICES_REVERSED
   CLI_DEFAULTS["-S"]=$DOCKER_SERVICES_REVERSED
 
@@ -220,7 +222,8 @@ function build_container() {
   else
     p="./${i}/"
   fi
-  docker build -t ${NAME}_${i} $p
+  [ -n "${OPBUILD_NOCACHE}" ] && nocache="--no-cache"
+  docker build ${nocache} -t ${NAME}_${i} $p
   if [ "$?" -ne "0" ]; then
     echo "*** Build container failed: $i"
     exit 1
@@ -253,6 +256,7 @@ default_ops
 [ -n "${CLI["-d"]+q}" ] && OPDAEMON=${CLI["-d"]}
 [ -n "${CLI["-l"]+q}" ] && OPLOGS=${CLI["-l"]}
 [ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}
+[ -n "${CLI["-B"]+q}" ] && OPBUILD=${CLI["-B"]} OPBUILD_NOCACHE=1
 [ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}
 [ -n "${CLI["-S"]+q}" ] && OPKILL=${CLI["-S"]}
 [ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1
