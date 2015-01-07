@@ -116,7 +116,6 @@ function get_docker_run_args() {
     DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
     DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
     DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
-    DOCKER_PATH[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.build       < ${OPCONF} | sed 's/- / /g')
   done
 
   # if attributes are a part of the ALL target, then apply them to every target
@@ -140,6 +139,13 @@ function get_docker_run_args() {
     for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
     for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";            done
     for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                       done
+  done
+}
+
+function get_docker_build_args() {
+  # parse the fug.yml configuration file
+  for i in $(${FUGDIR}/shyaml keys < ${OPCONF}); do
+    DOCKER_PATH[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.build       < ${OPCONF} | sed 's/- / /g')
   done
 }
 
@@ -218,7 +224,7 @@ function build_container() {
   local p
   echo " * Building $i (${NAME}_${i}) "
   if [ -n "${DOCKER_PATH[$i]}" ]; then
-    p=${DOCKER_PATH[$i]}
+    p="${DOCKER_PATH[$i]}"
   else
     p="./${i}/"
   fi
@@ -272,6 +278,9 @@ default_ops
 
 # get an alphanumeric name for the containers base on the current working directory
 NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//')"
+
+# load up build args from fug.yml
+get_docker_build_args
 
 # stop mode
 if [ -n "${OPSTOP}" ]; then
