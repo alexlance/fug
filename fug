@@ -319,7 +319,7 @@ fi
 
 # If running -b then build and exit
 if [ -n "${OPBUILD}" ]; then
-  kill_containers ${OPBUILD}
+  stop_containers ${OPBUILD}
   for i in ${OPBUILD}; do
     build_container ${i}
   done
