@@ -153,6 +153,7 @@ function stop_containers() {
   local services=$@
   for i in $services; do
     kill1 $i
+    kill2 $i
   done
 }
 
@@ -296,7 +297,6 @@ fi
 
 # show logs
 if [ -n "${OPLOGS}" ]; then
-
   trap "{ halt_log ${OPLOGS} ; exit 0; }" SIGINT
   for i in ${OPLOGS}; do
     id="$(docker ps | grep "${NAME}_${i}" | awk '{print $1}')"
@@ -319,7 +319,6 @@ fi
 
 # If running -b then build and exit
 if [ -n "${OPBUILD}" ]; then
-  stop_containers ${OPBUILD}
   for i in ${OPBUILD}; do
     build_container ${i}
   done
@@ -340,6 +339,7 @@ done
 get_docker_run_args
 for i in $services; do
   kill1 $i
+  kill2 $i
 
   echo " * Starting $i"
   cmd="docker run --rm ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
