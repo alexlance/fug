@@ -20,23 +20,27 @@ OPTIONS:
     -b [NAMES]      build services
     -B [NAMES]      build services, without using cache
     -s [NAMES]      stop containers
-    -S [NAMES]      stop containers, remove images
     -v              verbose debugging
     -h              display this help
 
-When run with no arguments, fug will start all services (defined by \$DOCKER_SERVICES)
-in the foreground. If the containers haven't been built yet, fug will attempt to build
-them.
+When run with no arguments, fug will start all services in the foreground. If the
+containers haven't been built yet, fug will attempt to build them.
 
-To build, run, or stop some particular services, use a space separated list of service
-NAMES: eg: fug -d service1 service2; fug -l service1 service2; fug -s service1 service2
+The list of services can be defined on the command line, or in the environment var
+called DOCKER_SERVICES.
 
-If no list of NAMES is specified, then the operation will apply to ALL services. Eg:
-fug -b; fug -d; fug -l
+eg:
+fug -d service1 service2
+fug -l service1 service2
+
+or:
+DOCKER_SERVICES="service1 service2"
+fug -d
+fug -l
 
 Fug looks for a fug.yml file that defines the manner in which docker run is invoked for
 each service. The fug.yml file supports environment variables in \${SOMEVAR} format and
-has an ALL build target for settings that should be applied to all services.
+can have an ALL build target for settings that should be applied to all services.
 
 EOF
 }
@@ -89,7 +93,7 @@ function validate_ops() {
   done
 }
 
-# when a flag is supplied without args
+# when a command line flag is supplied without args
 function default_ops() {
   local -A CLI_DEFAULTS
   CLI_DEFAULTS["-d"]=$DOCKER_SERVICES
@@ -97,7 +101,6 @@ function default_ops() {
   CLI_DEFAULTS["-b"]=$DOCKER_SERVICES_REVERSED
   CLI_DEFAULTS["-B"]=$DOCKER_SERVICES_REVERSED
   CLI_DEFAULTS["-s"]=$DOCKER_SERVICES_REVERSED
-  CLI_DEFAULTS["-S"]=$DOCKER_SERVICES_REVERSED
 
   for f in ${!CLI[@]}; do
     if [ -z "${CLI[$f]}" ] && [ "${CLI_DEFAULTS[$f]}" ]; then
@@ -157,15 +160,6 @@ function stop_containers() {
   done
 }
 
-function kill_containers() {
-  local services=$@
-  for i in $services; do
-    kill1 $i
-    kill2 $i
-    kill3 $i
-  done
-}
-
 function kill1() {
   local i=$1
   local ids="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
@@ -184,17 +178,6 @@ function kill2() {
     if [ -n "${x}" ]; then
       echo " * Removing ${NAME}_${i} ($x)"
       docker rm -f $x
-    fi
-  done
-}
-
-function kill3() {
-  local i=$1
-  local ids="$(docker images | grep ${NAME}_${i} | awk '{print $3}')"
-  for x in $ids; do
-    if [ -n "${x}" ]; then
-      echo " * Removing image ${NAME}_${i} ($x)"
-      docker rmi -f $x
     fi
   done
 }
@@ -223,29 +206,91 @@ function build_container() {
   # build new images
   local i=$1
   local p
-  echo " * Building $i (${NAME}_${i}) "
   if [ -n "${DOCKER_PATH[$i]}" ]; then
     p="${DOCKER_PATH[$i]}"
   else
     p="./${i}/"
   fi
   [ -n "${OPBUILD_NOCACHE}" ] && nocache="--no-cache"
-  docker build ${nocache} -t ${NAME}_${i} $p
-  if [ "$?" -ne "0" ]; then
-    echo "*** Build container failed: $i"
-    exit 1
+  local cmd="docker build ${nocache} -t ${NAME}_${i} $p"
+
+  # if verbose, then we run in non-concurrent build mode
+  if [ -n "${OPVERBOSE}" ]; then
+    echo " * Building $i (${NAME}_${i}) "
+    $cmd
+    if [ "$?" != "0" ]; then
+     echo "*** Build container failed: $i"
+     exit 1
+    fi
+  # else, build containers concurrently
+  else
+    $cmd > /dev/null 2>&1 &
+    PIDS[$i]="$!"
   fi
 }
+
+function watch_containers_build() {
+  # EXITS will contain docker build exit statuses
+  local -A EXITS
+  trap "{ echo ''; exit 1; }" SIGINT
+  while [ true ]; do
+    # if no more processes, then break loop
+    [ "${#PIDS[@]}" == "0" ] && break
+
+    for i in ${!PIDS[@]}; do
+      if [ "${PIDS[$i]}" ] && [ "$(ps -p${PIDS[$i]} --no-headers)" ]; then
+        EXITS[$i]="-1"
+      elif [ "${PIDS[$i]}" ]; then
+        wait ${PIDS[$i]}
+        EXITS[$i]=$? # exit status of container build process
+        unset PIDS[$i]
+      fi
+    done
+
+    # echo out an updating status line
+    if [ -z "${OPVERBOSE}" ]; then
+      echo -n "Building: "
+      for i in $OPBUILD; do
+        if [ "${EXITS[$i]}" == "-1" ] ; then
+          echo -n "$i "
+        elif [ "${EXITS[$i]}" != "0" ] ; then
+          echo -ne "${red}${i}${end_colour} "
+        else
+          echo -ne "${green}${i}${end_colour} "
+        fi
+      done
+      echo -ne '\r' # backspace the whole line
+    fi
+
+    sleep 0.5
+  done
+
+  [ -z "${OPVERBOSE}" ] && echo ""
+
+  for i in ${!EXITS[@]}; do
+    if [ "${EXITS[$i]}" != "0" ]; then
+     echo "*** Build container failed: $i"
+     exit 1
+   fi
+  done
+}
+
+
 
 # These are the currently supported docker settings
 declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT
 declare -A DOCKER_PORTS DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH
 
-# where `docker run` cli options are constructed
-declare -A ARGS
+# where `docker run` cli options are constructed, PIDS is for build process ids
+declare -A ARGS PIDS
 
 # Location of script
 FUGDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# Some colours
+red='\033[0;31m'
+green='\033[0;32m'
+end_colour='\033[0m' # No Color
 
 # No services?
 [ -z "${DOCKER_SERVICES}" ] && echo "DOCKER_SERVICES is not set" && exit 1
@@ -265,7 +310,6 @@ default_ops
 [ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}
 [ -n "${CLI["-B"]+q}" ] && OPBUILD=${CLI["-B"]} OPBUILD_NOCACHE=1
 [ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}
-[ -n "${CLI["-S"]+q}" ] && OPKILL=${CLI["-S"]}
 [ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1
 [ -n "${CLI["-h"]+q}" ] && OPHELP=1
 
@@ -289,12 +333,6 @@ if [ -n "${OPSTOP}" ]; then
   exit $?
 fi
 
-# kill mode
-if [ -n "${OPKILL}" ]; then
-  kill_containers ${OPKILL}
-  exit $?
-fi
-
 # show logs
 if [ -n "${OPLOGS}" ]; then
   trap "{ halt_log ${OPLOGS} ; exit 0; }" SIGINT
@@ -312,7 +350,7 @@ if [ -n "${OPLOGS}" ]; then
 fi
 
 
-# if not building and not in daemon mode, then control-c stops the containers
+# if we're running in the foreground, then control-c stops the containers in reverse order
 if [ -z "${OPBUILD}" ] && [ -z "${OPDAEMON}" ] ; then
   trap "{ stop_containers ${DOCKER_SERVICES_REVERSED}; exit 0; }" SIGINT
 fi
@@ -322,6 +360,7 @@ if [ -n "${OPBUILD}" ]; then
   for i in ${OPBUILD}; do
     build_container ${i}
   done
+  watch_containers_build
   exit $?
 fi
 
@@ -335,6 +374,8 @@ for i in $services; do
     build_container ${i}
   fi
 done
+[ -z "${exists}" ] && watch_containers_build
+
 
 get_docker_run_args
 for i in $services; do
