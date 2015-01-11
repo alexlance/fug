@@ -382,10 +382,9 @@ for i in $services; do
   kill1 $i
   kill2 $i
 
-
   echo " * Starting $i"
   [ -f "${i}/environment" ] && ARGS[$i]+=" --env-file=./${i}/environment"
-  cmd="docker run --rm ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
+  cmd="docker run --rm --restart=always ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
   if [ -z "${OPDAEMON}" ]; then
     $cmd &
   else
