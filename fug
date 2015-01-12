@@ -252,7 +252,7 @@ function watch_containers_build() {
 
     # echo out an updating status line
     if [ -z "${OPVERBOSE}" ]; then
-      echo -n "Building(${ticker}s): "
+      echo -n "Build(${ticker}s): "
       for i in $OPBUILD; do
         if [ "${EXITS[$i]}" == "-1" ] ; then
           echo -n "$i "
