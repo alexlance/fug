@@ -232,10 +232,13 @@ function build_container() {
 function watch_containers_build() {
   # EXITS will contain docker build exit statuses
   local -A EXITS
+  local ticker
   trap "{ echo ''; exit 1; }" SIGINT
   while [ true ]; do
     # if no more processes, then break loop
     [ "${#PIDS[@]}" == "0" ] && break
+
+    ((ticker++))
 
     for i in ${!PIDS[@]}; do
       if [ "${PIDS[$i]}" ] && [ "$(ps -p${PIDS[$i]} --no-headers)" ]; then
@@ -249,7 +252,7 @@ function watch_containers_build() {
 
     # echo out an updating status line
     if [ -z "${OPVERBOSE}" ]; then
-      echo -n "Building: "
+      echo -n "Building(${ticker}s): "
       for i in $OPBUILD; do
         if [ "${EXITS[$i]}" == "-1" ] ; then
           echo -n "$i "
@@ -262,7 +265,7 @@ function watch_containers_build() {
       echo -ne '\r' # backspace the whole line
     fi
 
-    sleep 0.5
+    sleep 1
   done
 
   [ -z "${OPVERBOSE}" ] && echo ""
