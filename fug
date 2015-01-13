@@ -387,7 +387,9 @@ for i in $services; do
 
   echo " * Starting $i"
   [ -f "${i}/environment" ] && ARGS[$i]+=" --env-file=./${i}/environment"
-  cmd="docker run --restart=always ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
+  removerestart=" --rm "
+  [ "${OPDAEMON}" ] && removerestart=" --restart=always "
+  cmd="docker run $removerestart ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
   if [ -z "${OPDAEMON}" ]; then
     $cmd &
   else
