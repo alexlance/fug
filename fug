@@ -281,7 +281,7 @@ function watch_containers_build() {
 function get_running_port() {
   local i=$1
   local id=$(docker ps | grep ${NAME}_${i} | awk '{ print $1 }')
-  [ "${id}" ] && echo $(docker exec $id echo \$PORT_${i})
+  [ "${id}" ] && echo $(docker inspect --format='{{range $p,$conf := .NetworkSettings.Ports}}{{(index $conf 0).HostPort}}{{end}}' $id)
 }
 
 # These are the currently supported docker settings
