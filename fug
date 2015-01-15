@@ -325,7 +325,7 @@ default_ops
 [ ! -f "${OPCONF}" ]  && echo "no configuration file found: ${OPCONF}" && exit 1
 
 # get an alphanumeric name for the containers base on the current working directory
-NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//')"
+NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//g')"
 
 # load up build args from fug.yml
 get_docker_build_args
