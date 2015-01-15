@@ -278,7 +278,11 @@ function watch_containers_build() {
   done
 }
 
-
+function get_running_port() {
+  local i=$1
+  local id=$(docker ps | grep ${NAME}_${i} | awk '{ print $1 }')
+  [ "${id}" ] && echo $(docker exec $id echo \$PORT_${i})
+}
 
 # These are the currently supported docker settings
 declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT
@@ -384,6 +388,7 @@ get_docker_run_args
 ORIG_PORT=$PORT
 ticker=25000
 for i in $services; do
+  RUNNING_PORT=$(get_running_port $i)
   kill1 $i
   kill2 $i
 
@@ -393,8 +398,12 @@ for i in $services; do
   # if starting on an "auto" port, automatically assign the port to start on
   PORT=$ORIG_PORT
   if [ "$(echo ${DOCKER_PORTS[$i]} | grep auto)" ]; then
-    ((ticker=ticker+10))
-    PORT=$ticker
+    if [ -z "$RUNNING_PORT" ]; then
+      ((ticker=ticker+10))
+      PORT=$ticker
+    else
+      PORT=$RUNNING_PORT
+    fi
     ARGS[$i]+=" --publish=${PORT}:${PORT}"
     customportname="PORT_${i}"
     export ${customportname}=$PORT
