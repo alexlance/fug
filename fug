@@ -137,11 +137,11 @@ function get_docker_run_args() {
   for i in $DOCKER_SERVICES; do
     for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
     for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                 done
-    for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";             done
     for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";              done
     for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
     for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";            done
     for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                       done
+    for v in ${DOCKER_PORTS[$i]};   do [ "$v" != "auto" ] && ARGS[$i]+=" --publish=$v"; done
   done
 }
 
@@ -381,12 +381,25 @@ done
 
 
 get_docker_run_args
+ORIG_PORT=$PORT
+ticker=25000
 for i in $services; do
   kill1 $i
   kill2 $i
 
   echo " * Starting $i"
   [ -f "${i}/environment" ] && ARGS[$i]+=" --env-file=./${i}/environment"
+
+  # if starting on an "auto" port, automatically assign the port to start on
+  PORT=$ORIG_PORT
+  if [ "$(echo ${DOCKER_PORTS[$i]} | grep auto)" ]; then
+    ((ticker=ticker+10))
+    PORT=$ticker
+    ARGS[$i]+=" --publish=${PORT}:${PORT}"
+    customportname="PORT_${i}"
+    export ${customportname}=$PORT
+  fi
+
   removerestart=" --rm "
   [ "${OPDAEMON}" ] && removerestart=" --restart=always "
   cmd="docker run $removerestart ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
@@ -395,7 +408,7 @@ for i in $services; do
   else
     nohup $cmd > /dev/null 2>&1 &
   fi
-  sleep 0.5
+  [ "${DOCKER_LINKS[$i]}" ] && sleep 0.5
 done
 
 # If not in daemon mode then await a control-c/SIGINT
