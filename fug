@@ -299,8 +299,12 @@ red='\033[0;31m'
 green='\033[0;32m'
 end_colour='\033[0m' # No Color
 
-# No services?
-[ -z "${DOCKER_SERVICES}" ] && echo "DOCKER_SERVICES is not set" && exit 1
+# No services? Then check current dir
+if [ -z "${DOCKER_SERVICES}" ]; then
+  for i in *; do
+    [ -d "$i" ] && [ -f "$i/Dockerfile" ] && DOCKER_SERVICES+="$i "
+  done
+fi
 for i in $DOCKER_SERVICES; do DOCKER_SERVICES_REVERSED="$i $DOCKER_SERVICES_REVERSED"; done
 
 # Setup the valid cli options and their defaults
