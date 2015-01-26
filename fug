@@ -114,6 +114,7 @@ function get_docker_run_args() {
   for i in $(${FUGDIR}/shyaml keys < ${OPCONF}); do
     DOCKER_LINKS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.links       < ${OPCONF} | sed 's/- / /g')
     DOCKER_ENV[$i]+=$(    ${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g')
+    DOCKER_ENVFILE[$i]+=$(${FUGDIR}/shyaml get-value ${i}.env-file    < ${OPCONF} | sed 's/- / /g')
     DOCKER_EXTRA[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.extra       < ${OPCONF} | sed 's/- / /g')
     DOCKER_ROOT[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.privileged  < ${OPCONF} | sed 's/- / /g')
     DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
@@ -125,6 +126,7 @@ function get_docker_run_args() {
   for i in $DOCKER_SERVICES; do
     [ -n "${DOCKER_LINKS['ALL']}" ]   && DOCKER_LINKS[$i]+=" ${DOCKER_LINKS['ALL']}"
     [ -n "${DOCKER_ENV['ALL']}" ]     && DOCKER_ENV[$i]+=" ${DOCKER_ENV['ALL']}"
+    [ -n "${DOCKER_ENVFILE['ALL']}" ] && DOCKER_ENVFILE[$i]+=" ${DOCKER_ENV['ALL']}"
     [ -n "${DOCKER_EXTRA['ALL']}" ]   && DOCKER_EXTRA[$i]+=" ${DOCKER_EXTRA['ALL']}"
     [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
     [ -n "${DOCKER_PORTS['ALL']}" ]   && DOCKER_PORTS[$i]+=" ${DOCKER_PORTS['ALL']}"
@@ -305,6 +307,7 @@ if [ -z "${DOCKER_SERVICES}" ]; then
     [ -d "$i" ] && [ -f "$i/Dockerfile" ] && DOCKER_SERVICES+="$i "
   done
 fi
+[ -z "${DOCKER_SERVICES}" ] && "No services found in current directory or defined in DOCKER_SERVICES" && exit 1
 for i in $DOCKER_SERVICES; do DOCKER_SERVICES_REVERSED="$i $DOCKER_SERVICES_REVERSED"; done
 
 # Setup the valid cli options and their defaults
@@ -379,8 +382,9 @@ services=$DOCKER_SERVICES
 [ -n "${OPDAEMON}" ] && services=${OPDAEMON}
 
 # default is to run the container - but check if it exists first if not, build it
+images="$(docker images | awk '{ print $1 }')"
 for i in $services; do
-  exists=$(docker images | grep "${NAME}_${i}")
+  exists=$(grep "${NAME}_${i}" <<< "$images")
   if [ -z "${exists}" ]; then
     build_container ${i}
   fi
@@ -397,7 +401,10 @@ for i in $services; do
   kill2 $i
 
   echo " * Starting $i"
-  [ -f "${i}/environment" ] && ARGS[$i]+=" --env-file=./${i}/environment"
+  for v in ${DOCKER_ENVFILE[$i]}; do
+    [ ! -f "${i}/${v}" ] && echo "env-file not found: ./${i}/${v}" && exit 1
+    ARGS[$i]+=" --env-file=./${i}/${v}";
+  done
 
   # if starting on an "auto" port, automatically assign the port to start on
   PORT=$ORIG_PORT
