@@ -280,10 +280,16 @@ function watch_containers_build() {
   done
 }
 
-function get_running_port() {
+function inherit_container_environment() {
   local i=$1
   local id=$(docker ps | grep ${NAME}_${i} | awk '{ print $1 }')
-  [ "${id}" ] && echo $(docker inspect --format='{{range $p,$conf := .NetworkSettings.Ports}}{{(index $conf 0).HostPort}}{{end}}' $id)
+  if [ "${id}" ]; then
+    for v in ${DOCKER_ENVFILE[$i]}; do
+      unset exportvars
+      [ -f "./${i}/${v}" ] && exportvars=$(docker exec $id env | sed 's/\(.*\)=\(.*$\)/export \1="\2"/g' | grep -f ./${i}/${v})
+      [ -n "$exportvars" ] && eval "$exportvars"
+    done
+  fi
 }
 
 # These are the currently supported docker settings
@@ -393,10 +399,10 @@ done
 
 
 get_docker_run_args
-ORIG_PORT=$PORT
 ticker=25000
 for i in $services; do
-  RUNNING_PORT=$(get_running_port $i)
+  unset PORT
+  inherit_container_environment $i
   kill1 $i
   kill2 $i
 
@@ -407,17 +413,15 @@ for i in $services; do
   done
 
   # if starting on an "auto" port, automatically assign the port to start on
-  PORT=$ORIG_PORT
-  if [ "$(echo ${DOCKER_PORTS[$i]} | grep auto)" ]; then
-    if [ -z "$RUNNING_PORT" ]; then
-      ((ticker=ticker+10))
-      PORT=$ticker
-    else
-      PORT=$RUNNING_PORT
-    fi
+  if [ -z "${PORT}" ] && [ "$(echo ${DOCKER_PORTS[$i]} | grep auto)" ]; then
+    ((ticker=ticker+10))
+    export PORT=$ticker
+  fi
+
+  if [ "${PORT}" ]; then
     ARGS[$i]+=" --publish=${PORT}:${PORT}"
-    customportname="PORT_${i}"
-    export ${customportname}=$PORT
+    customport="PORT_${i}"
+    export ${customport}=$PORT # for haproxy
   fi
 
   removerestart=" --rm "
