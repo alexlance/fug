@@ -17,6 +17,7 @@ OPTIONS:
     -c FILE         config file, default: ./fug.yml
     -d [NAMES]      run in daemon mode
     -l [NAMES]      show logs
+    -L [NAMES]      show logs and exit
     -b [NAMES]      build services
     -B [NAMES]      build services, without using cache
     -s [NAMES]      stop containers
@@ -327,6 +328,7 @@ default_ops
 [ -n "${CLI["-c"]+q}" ] && OPCONF=${CLI["-c"]}
 [ -n "${CLI["-d"]+q}" ] && OPDAEMON=${CLI["-d"]}
 [ -n "${CLI["-l"]+q}" ] && OPLOGS=${CLI["-l"]}
+[ -n "${CLI["-L"]+q}" ] && OPLOGSEXIT=${CLI["-L"]}
 [ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}
 [ -n "${CLI["-B"]+q}" ] && OPBUILD=${CLI["-B"]} OPBUILD_NOCACHE=1
 [ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}
@@ -353,7 +355,7 @@ if [ -n "${OPSTOP}" ]; then
   exit $?
 fi
 
-# show logs
+# show logs, like a tail -f
 if [ -n "${OPLOGS}" ]; then
   trap "{ halt_log ${OPLOGS} ; exit 0; }" SIGINT
   for i in ${OPLOGS}; do
@@ -366,6 +368,19 @@ if [ -n "${OPLOGS}" ]; then
     fi
   done
   [ -n "${go}" ] && listen
+  exit $?
+fi
+
+# show logs and exit
+if [ -n "${OPLOGSEXIT}" ]; then
+  for i in ${OPLOGSEXIT}; do
+    id="$(docker ps | grep "${NAME}_${i}" | awk '{print $1}')"
+    if [ -n "${id}" ]; then
+      docker logs $id
+    else
+      echo "Not started: ${NAME}_${i}"
+    fi
+  done
   exit $?
 fi
 
