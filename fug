@@ -408,7 +408,7 @@ fi
 if [ "${OPBUILD}" ]; then
   get_docker_run_args # to discover siblings
   for i in ${!DOCKER_SIBLINGS[@]}; do
-    OPBUILD+=" ${i}"
+    [ "$(echo $OPBUILD | grep -E "\b$i\b")" ] || OPBUILD+=" ${i}"
   done
   for i in ${OPBUILD}; do
     build_container ${i}
