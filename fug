@@ -166,8 +166,7 @@ function get_docker_build_args() {
 function stop_containers() {
   local services=$@
   for i in $services; do
-    kill1 $i
-    kill2 $i
+    nuke_container $i
   done
 }
 
@@ -175,29 +174,18 @@ function stop_siblings() {
   local services=$@
   for i in $services; do
     for sibling_name in ${!DOCKER_SIBLINGS[@]}; do
-      kill1 ${i}_${sibling_name}
-      kill2 ${i}_${sibling_name}
+      nuke_container ${i}_${sibling_name}
     done;
   done
 }
 
-function kill1() {
+function nuke_container() {
   local i=$1
   local ids="$(docker ps -a | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
   for x in $ids; do
     if [ -n "${x}" ]; then
       echo " * Stopping ${NAME}_${i} ($x)"
       docker stop -t 0 $x > /dev/null
-    fi
-  done
-}
-
-function kill2() {
-  local i=$1
-  local ids="$(docker ps -a | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
-  for x in $ids; do
-    if [ -n "${x}" ]; then
-      echo " * Removing ${NAME}_${i} ($x)"
       docker rm -f $x > /dev/null
     fi
   done
@@ -433,8 +421,7 @@ ticker=25000
 for i in ${OPDAEMON}; do
   unset PORT
   inherit_container_environment $i
-  kill1 $i
-  kill2 $i
+  nuke_container $i
 
   echo " * Starting ${NAME}_${i}"
 
