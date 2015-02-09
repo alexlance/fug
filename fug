@@ -119,13 +119,17 @@ function get_docker_run_args() {
     DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
     DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
     DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
+    if [ "$(${FUGDIR}/shyaml get-value ${i}.sibling < ${OPCONF} | sed 's/- / /g')" ]; then
+      DOCKER_SIBLINGS[$i]=1
+    fi
   done
 
   # if attributes are a part of the ALL target, then apply them to every target
   for i in $DOCKER_SERVICES; do
+    [ "${DOCKER_SIBLINGS[$i]}" ] && continue; # don't let the ALL target, affect siblings
     [ -n "${DOCKER_LINKS['ALL']}" ]   && DOCKER_LINKS[$i]+=" ${DOCKER_LINKS['ALL']}"
     [ -n "${DOCKER_ENV['ALL']}" ]     && DOCKER_ENV[$i]+=" ${DOCKER_ENV['ALL']}"
-    [ -n "${DOCKER_ENVFILE['ALL']}" ] && DOCKER_ENVFILE[$i]+=" ${DOCKER_ENV['ALL']}"
+    [ -n "${DOCKER_ENVFILE['ALL']}" ] && DOCKER_ENVFILE[$i]+=" ${DOCKER_ENVFILE['ALL']}"
     [ -n "${DOCKER_EXTRA['ALL']}" ]   && DOCKER_EXTRA[$i]+=" ${DOCKER_EXTRA['ALL']}"
     [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
     [ -n "${DOCKER_PORTS['ALL']}" ]   && DOCKER_PORTS[$i]+=" ${DOCKER_PORTS['ALL']}"
@@ -134,10 +138,17 @@ function get_docker_run_args() {
     [ -n "${DOCKER_PATH['ALL']}" ]    && DOCKER_PATH[$i]+=" ${DOCKER_PATH['ALL']}"
   done
 
+  # make a list of all services and siblings
+  local ALL_SERVICES=$DOCKER_SERVICES
+  for i in ${!DOCKER_SIBLINGS[@]}; do
+    ALL_SERVICES+=" $i"
+  done
+
   # build up command line argument to docker run
-  for i in $DOCKER_SERVICES; do
+  for i in $ALL_SERVICES; do
     for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
     for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                 done
+    for v in ${DOCKER_ENVFILE[$i]}; do ARGS[$i]+=" --env-file=./${i}/${v}";   done
     for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";              done
     for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
     for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";            done
@@ -161,24 +172,34 @@ function stop_containers() {
   done
 }
 
+function stop_siblings() {
+  local services=$@
+  for i in $services; do
+    for sibling_name in ${!DOCKER_SIBLINGS[@]}; do
+      kill1 ${i}_${sibling_name}
+      kill2 ${i}_${sibling_name}
+    done;
+  done
+}
+
 function kill1() {
   local i=$1
-  local ids="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
+  local ids="$(docker ps -a | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
   for x in $ids; do
     if [ -n "${x}" ]; then
       echo " * Stopping ${NAME}_${i} ($x)"
-      docker stop $x > /dev/null
+      docker stop -t 0 $x > /dev/null
     fi
   done
 }
 
 function kill2() {
   local i=$1
-  local ids="$(docker ps -a | grep ${NAME}_${i} | awk '{print $1}')"
+  local ids="$(docker ps -a | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
   for x in $ids; do
     if [ -n "${x}" ]; then
       echo " * Removing ${NAME}_${i} ($x)"
-      docker rm -f $x
+      docker rm -f $x > /dev/null
     fi
   done
 }
@@ -186,7 +207,7 @@ function kill2() {
 function halt_log() {
   services=$@
   for i in $services; do
-    local ids="$(docker ps | grep ${NAME}_${i} | awk '{print $1}')"
+    local ids="$(docker ps | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
     for i in $ids; do
       if [ -n "${i}" ]; then
         local pid=$(pgrep -f "docker logs -f ${i}")
@@ -265,7 +286,6 @@ function watch_containers_build() {
       done
       echo -ne '\r' # backspace the whole line
     fi
-
     sleep 1
   done
 
@@ -281,7 +301,7 @@ function watch_containers_build() {
 
 function inherit_container_environment() {
   local i=$1
-  local id=$(docker ps | grep ${NAME}_${i} | awk '{ print $1 }')
+  local id=$(docker ps | grep -E "\b${NAME}_${i}\b" | awk '{ print $1 }')
   if [ "${id}" ]; then
     for v in ${DOCKER_ENVFILE[$i]}; do
       unset exportvars
@@ -292,8 +312,8 @@ function inherit_container_environment() {
 }
 
 # These are the currently supported docker settings
-declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT
-declare -A DOCKER_PORTS DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH
+declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT DOCKER_PORTS
+declare -A DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH DOCKER_SIBLINGS DOCKER_ENVFILE
 
 # where `docker run` cli options are constructed, PIDS is for build process ids
 declare -A ARGS PIDS
@@ -350,6 +370,8 @@ get_docker_build_args
 
 # stop mode
 if [ -n "${OPSTOP}" ]; then
+  get_docker_run_args # to discover siblings
+  stop_siblings ${OPSTOP}
   stop_containers ${OPSTOP}
   exit $?
 fi
@@ -358,7 +380,7 @@ fi
 if [ -n "${OPLOGS}" ]; then
   trap "{ halt_log ${OPLOGS} ; exit 0; }" SIGINT
   for i in ${OPLOGS}; do
-    id="$(docker ps | grep "${NAME}_${i}" | awk '{print $1}')"
+    id="$(docker ps | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
     if [ -n "${id}" ]; then
       docker logs -f $id &
       go=1
@@ -373,7 +395,7 @@ fi
 # show logs and exit
 if [ -n "${OPLOGSEXIT}" ]; then
   for i in ${OPLOGSEXIT}; do
-    id="$(docker ps | grep "${NAME}_${i}" | awk '{print $1}')"
+    id="$(docker ps | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
     if [ -n "${id}" ]; then
       docker logs $id
     else
@@ -384,7 +406,7 @@ if [ -n "${OPLOGSEXIT}" ]; then
 fi
 
 # If running -b then build and exit
-if [ -n "${OPBUILD}" ]; then
+if [ "${OPBUILD}" ]; then
   for i in ${OPBUILD}; do
     build_container ${i}
   done
@@ -392,12 +414,9 @@ if [ -n "${OPBUILD}" ]; then
   exit $?
 fi
 
-services=$DOCKER_SERVICES
-[ -n "${OPDAEMON}" ] && services=${OPDAEMON}
-
-# default is to run the container - but check if it exists first if not, build it
+# default is to run the container - but check if it exists first, if not, build it
 images="$(docker images | awk '{ print $1 }')"
-for i in $services; do
+for i in ${OPDAEMON}; do
   exists=$(grep "${NAME}_${i}" <<< "$images")
   if [ -z "${exists}" ]; then
     build_container ${i}
@@ -408,17 +427,13 @@ done
 
 get_docker_run_args
 ticker=25000
-for i in $services; do
+for i in ${OPDAEMON}; do
   unset PORT
   inherit_container_environment $i
   kill1 $i
   kill2 $i
 
-  echo " * Starting $i"
-  for v in ${DOCKER_ENVFILE[$i]}; do
-    [ ! -f "${i}/${v}" ] && echo "env-file not found: ./${i}/${v}" && exit 1
-    ARGS[$i]+=" --env-file=./${i}/${v}";
-  done
+  echo " * Starting ${NAME}_${i}"
 
   # if starting on an "auto" port, automatically assign the port to start on
   if [ -z "${PORT}" ] && [ "$(echo ${DOCKER_PORTS[$i]} | grep auto)" ]; then
@@ -439,9 +454,13 @@ for i in $services; do
   [ "${DOCKER_LINKS[$i]}" ] && sleep 0.5
 done
 
-# If not in daemon mode then await a control-c/SIGINT
-if [ -z "${OPDAEMON}" ]; then
-  listen
-fi
+# take care of any siblings (eg: a logger or backup sidekick etc)
+stop_siblings ${OPDAEMON}
+for i in ${OPDAEMON}; do
+  for sibling_name in ${!DOCKER_SIBLINGS[@]}; do
+    echo " * Starting sibling ${NAME}_${i}_${sibling_name}"
+    nohup docker run --restart=always ${ARGS[$sibling_name]} --volumes-from=${NAME}_${i} --name=${NAME}_${i}_${sibling_name} ${NAME}_${sibling_name} > /dev/null 2>&1 &
+  done
+done
 
 
