@@ -24,9 +24,6 @@ OPTIONS:
     -v              verbose debugging
     -h              display this help
 
-When run with no arguments, fug will start all services in the foreground. If the
-containers haven't been built yet, fug will attempt to build them.
-
 The list of services can be defined on the command line, or in the environment var
 called DOCKER_SERVICES.
 
@@ -326,19 +323,20 @@ default_ops
 
 # make the ops slightly easier to read. The +q hack permits
 # checking for array keys that have empty values
-[ -n "${CLI["-c"]+q}" ] && OPCONF=${CLI["-c"]}
-[ -n "${CLI["-d"]+q}" ] && OPDAEMON=${CLI["-d"]}
-[ -n "${CLI["-l"]+q}" ] && OPLOGS=${CLI["-l"]}
-[ -n "${CLI["-L"]+q}" ] && OPLOGSEXIT=${CLI["-L"]}
-[ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}
-[ -n "${CLI["-B"]+q}" ] && OPBUILD=${CLI["-B"]} OPBUILD_NOCACHE=1
-[ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}
-[ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1
-[ -n "${CLI["-h"]+q}" ] && OPHELP=1
+[ -n "${CLI["-c"]+q}" ] && OPCONF=${CLI["-c"]}     good=1
+[ -n "${CLI["-d"]+q}" ] && OPDAEMON=${CLI["-d"]}   good=1
+[ -n "${CLI["-l"]+q}" ] && OPLOGS=${CLI["-l"]}     good=1
+[ -n "${CLI["-L"]+q}" ] && OPLOGSEXIT=${CLI["-L"]} good=1
+[ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}    good=1
+[ -n "${CLI["-B"]+q}" ] && OPBUILD=${CLI["-B"]}    good=1 OPBUILD_NOCACHE=1
+[ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}     good=1
+[ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1             good=1
+[ -n "${CLI["-h"]+q}" ] && OPHELP=1                good=1
 
 # helper monkeys
 [ -n "${OPVERBOSE}" ] && env && set -o xtrace
 [ -n "${OPHELP}" ]    && usage && exit 0
+[ -z "${good}" ]      && usage && exit 1
 
 # get the configuration
 [ -z "${OPCONF}" ]    && OPCONF="./fug.yml"
@@ -383,12 +381,6 @@ if [ -n "${OPLOGSEXIT}" ]; then
     fi
   done
   exit $?
-fi
-
-
-# if we're running in the foreground, then control-c stops the containers in reverse order
-if [ -z "${OPBUILD}" ] && [ -z "${OPDAEMON}" ] ; then
-  trap "{ stop_containers ${DOCKER_SERVICES_REVERSED}; exit 0; }" SIGINT
 fi
 
 # If running -b then build and exit
@@ -440,14 +432,10 @@ for i in $services; do
     export ${customport}=$PORT # for haproxy
   fi
 
-  removerestart=" --rm "
-  [ "${OPDAEMON}" ] && removerestart=" --restart=always "
-  cmd="docker run $removerestart ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i}"
-  if [ -z "${OPDAEMON}" ]; then
-    $cmd &
-  else
-    nohup $cmd > /dev/null 2>&1 &
-  fi
+  # run and background the docker process
+  nohup docker run --restart=always ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i} > /dev/null 2>&1 &
+
+  # artificial delay to permit docker links to work correctly
   [ "${DOCKER_LINKS[$i]}" ] && sleep 0.5
 done
 
