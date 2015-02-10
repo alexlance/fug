@@ -448,7 +448,8 @@ done
 stop_siblings ${OPDAEMON}
 for i in ${OPDAEMON}; do
   for sibling_name in ${!DOCKER_SIBLINGS[@]}; do
-    echo " * Starting sibling ${NAME}_${i}_${sibling_name}"
+    echo " * Starting ${NAME}_${i}_${sibling_name}"
+    export SIBLING_SERVICE=$i
     nohup docker run --restart=always ${ARGS[$sibling_name]} --volumes-from=${NAME}_${i} --name=${NAME}_${i}_${sibling_name} ${NAME}_${sibling_name} > /dev/null 2>&1 &
   done
 done
