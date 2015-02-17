@@ -357,7 +357,7 @@ NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//g')"
 # If they want to exec into a container
 if [ "${OPEXEC}" ]; then
   id=$(docker ps | grep -E "\b${NAME}_${OPEXEC}\b" | awk '{ print $1 }')
-  docker exec -it $id bash
+  [ "${id}" ] && docker exec -it $id bash
   exit $?
 fi
 
