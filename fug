@@ -21,6 +21,7 @@ OPTIONS:
     -b [NAMES]      build services
     -B [NAMES]      build services, without using cache
     -s [NAMES]      stop containers
+    -e NAME         exec into a container
     -v              verbose debugging
     -h              display this help
 
@@ -337,6 +338,7 @@ default_ops
 [ -n "${CLI["-b"]+q}" ] && OPBUILD=${CLI["-b"]}    good=1
 [ -n "${CLI["-B"]+q}" ] && OPBUILD=${CLI["-B"]}    good=1 OPBUILD_NOCACHE=1
 [ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}     good=1
+[ -n "${CLI["-e"]+q}" ] && OPEXEC=${CLI["-e"]}     good=1
 [ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1             good=1
 [ -n "${CLI["-h"]+q}" ] && OPHELP=1                good=1
 
@@ -351,6 +353,13 @@ default_ops
 
 # get an alphanumeric name for the containers base on the current working directory
 NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//g')"
+
+# If they want to exec into a container
+if [ "${OPEXEC}" ]; then
+  id=$(docker ps | grep -E "\b${NAME}_${OPEXEC}\b" | awk '{ print $1 }')
+  docker exec -it $id bash
+  exit $?
+fi
 
 # load up build args from fug.yml
 get_docker_build_args
