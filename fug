@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# ensure this env var has no impact
+unset DOCKER_SERVICES
+
 function usage() {
 cat << EOF
 
@@ -10,12 +13,12 @@ files. Uses ./fug.yml for configuration, which is similar syntactically to Fig's
 
 USAGE:
 
-    $(basename $0) [-c FILE] [-d [NAMES]] [-l [NAMES]] [-b [NAMES]] [-s [NAMES]] [-v] [-h]
+    $(basename $0) [-c FILE] [-d|-l|-L|-b|-B|-s|-e NAMES] [-v] [-h]
 
 OPTIONS:
 
     -c FILE         config file, default: ./fug.yml
-    -d [NAMES]      run in daemon mode
+    -d [NAMES]      run the services in daemon mode
     -l [NAMES]      show logs
     -L [NAMES]      show logs and exit
     -b [NAMES]      build services
@@ -25,21 +28,8 @@ OPTIONS:
     -v              verbose debugging
     -h              display this help
 
-The list of services can be defined on the command line, or in the environment var
-called DOCKER_SERVICES.
-
-eg:
-fug -d service1 service2
-fug -l service1 service2
-
-or:
-DOCKER_SERVICES="service1 service2"
-fug -d
-fug -l
-
 Fug looks for a fug.yml file that defines the manner in which docker run is invoked for
-each service. The fug.yml file supports environment variables in \${SOMEVAR} format and
-can have an ALL build target for settings that should be applied to all services.
+each service. The fug.yml file supports environment variables in \${SOMEVAR} format.
 
 EOF
 }
