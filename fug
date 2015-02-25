@@ -109,29 +109,6 @@ function get_docker_run_args() {
     DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
     DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
     DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
-    if [ "$(${FUGDIR}/shyaml get-value ${i}.sibling < ${OPCONF} | sed 's/- / /g')" ]; then
-      DOCKER_SIBLINGS[$i]=1
-    fi
-  done
-
-  # if attributes are a part of the ALL target, then apply them to every target
-  for i in $DOCKER_SERVICES; do
-    [ "${DOCKER_SIBLINGS[$i]}" ] && continue; # don't let the ALL target, affect siblings
-    [ -n "${DOCKER_LINKS['ALL']}" ]   && DOCKER_LINKS[$i]+=" ${DOCKER_LINKS['ALL']}"
-    [ -n "${DOCKER_ENV['ALL']}" ]     && DOCKER_ENV[$i]+=" ${DOCKER_ENV['ALL']}"
-    [ -n "${DOCKER_ENVFILE['ALL']}" ] && DOCKER_ENVFILE[$i]+=" ${DOCKER_ENVFILE['ALL']}"
-    [ -n "${DOCKER_EXTRA['ALL']}" ]   && DOCKER_EXTRA[$i]+=" ${DOCKER_EXTRA['ALL']}"
-    [ -n "${DOCKER_ROOT['ALL']}" ]    && DOCKER_ROOT[$i]+=" ${DOCKER_ROOT['ALL']}"
-    [ -n "${DOCKER_PORTS['ALL']}" ]   && DOCKER_PORTS[$i]+=" ${DOCKER_PORTS['ALL']}"
-    [ -n "${DOCKER_VOLUMES['ALL']}" ] && DOCKER_VOLUMES[$i]+=" ${DOCKER_VOLUMES['ALL']}"
-    [ -n "${DOCKER_HOSTS['ALL']}" ]   && DOCKER_HOSTS[$i]+=" ${DOCKER_HOSTS['ALL']}"
-    [ -n "${DOCKER_PATH['ALL']}" ]    && DOCKER_PATH[$i]+=" ${DOCKER_PATH['ALL']}"
-  done
-
-  # make a list of all services and siblings
-  local ALL_SERVICES=$DOCKER_SERVICES
-  for i in ${!DOCKER_SIBLINGS[@]}; do
-    ALL_SERVICES+=" $i"
   done
 
   # build up command line argument to docker run
@@ -158,15 +135,6 @@ function stop_containers() {
   local services=$@
   for i in $services; do
     nuke_container $i
-  done
-}
-
-function stop_siblings() {
-  local services=$@
-  for i in $services; do
-    for sibling_name in ${!DOCKER_SIBLINGS[@]}; do
-      nuke_container ${i}_${sibling_name}
-    done;
   done
 }
 
@@ -291,7 +259,7 @@ function inherit_container_environment() {
 
 # These are the currently supported docker settings
 declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT DOCKER_PORTS
-declare -A DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH DOCKER_SIBLINGS DOCKER_ENVFILE
+declare -A DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH DOCKER_ENVFILE
 
 # where `docker run` cli options are constructed, PIDS is for build process ids
 declare -A ARGS PIDS
@@ -356,8 +324,6 @@ get_docker_build_args
 
 # stop mode
 if [ -n "${OPSTOP}" ]; then
-  get_docker_run_args # to discover siblings
-  stop_siblings ${OPSTOP}
   stop_containers ${OPSTOP}
   exit $?
 fi
@@ -393,10 +359,6 @@ fi
 
 # If running -b then build and exit
 if [ "${OPBUILD}" ]; then
-  get_docker_run_args # to discover siblings
-  for i in ${!DOCKER_SIBLINGS[@]}; do
-    [ "$(echo $OPBUILD | grep -E "\b$i\b")" ] || OPBUILD+=" ${i}"
-  done
   for i in ${OPBUILD}; do
     build_container ${i}
   done
@@ -442,15 +404,4 @@ for i in ${OPDAEMON}; do
   # artificial delay to permit docker links to work correctly
   [ "${DOCKER_LINKS[$i]}" ] && sleep 0.5
 done
-
-# take care of any siblings (eg: a logger or backup sidekick etc)
-stop_siblings ${OPDAEMON}
-for i in ${OPDAEMON}; do
-  for sibling_name in ${!DOCKER_SIBLINGS[@]}; do
-    echo " * Starting ${NAME}_${i}_${sibling_name}"
-    export SIBLING_SERVICE=$i
-    nohup docker run --restart=always ${ARGS[$sibling_name]} --volumes-from=${NAME}_${i} --name=${NAME}_${i}_${sibling_name} ${NAME}_${sibling_name} > /dev/null 2>&1 &
-  done
-done
-
 
