@@ -259,12 +259,22 @@ function inherit_container_environment() {
   fi
 }
 
+function load_docker_services() {
+  # Check fug.yml for list of services
+  for i in $(${FUGDIR}/shyaml keys < "${OPCONF}"); do
+    DOCKER_SERVICES+="${i} "
+  done
+  [ -z "${DOCKER_SERVICES}" ] && echo "No services found in config file." && exit 1
+  for i in $DOCKER_SERVICES; do DOCKER_SERVICES_REVERSED="$i $DOCKER_SERVICES_REVERSED"; done
+}
+
+
 # These are the currently supported docker settings
 declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT DOCKER_PORTS
 declare -A DOCKER_VOLUMES DOCKER_VOLFROM DOCKER_HOSTS DOCKER_PATH DOCKER_ENVFILE
 
 # where `docker run` cli options are constructed, PIDS is for build process ids
-declare -A ARGS PIDS
+declare -A ARGS PIDS CLI
 
 # Location of script
 FUGDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -274,24 +284,24 @@ red='\033[0;31m'
 green='\033[0;32m'
 end_colour='\033[0m' # No Color
 
-# No services? Then check current dir
-if [ -z "${DOCKER_SERVICES}" ]; then
-  for i in *; do
-    [ -d "$i" ] && [ -f "$i/Dockerfile" ] && DOCKER_SERVICES+="$i "
-  done
-fi
-[ -z "${DOCKER_SERVICES}" ] && "No services found in current directory or defined in DOCKER_SERVICES" && exit 1
-for i in $DOCKER_SERVICES; do DOCKER_SERVICES_REVERSED="$i $DOCKER_SERVICES_REVERSED"; done
-
 # Setup the valid cli options and their defaults
-declare -A CLI
 get_ops "$@"
 validate_ops
+
+
+# get the configuration file
+[ -n "${CLI["-c"]+q}" ] && OPCONF=${CLI["-c"]}     good=1
+[ -z "${OPCONF}" ]      && OPCONF="./fug.yml"
+[ ! -f "${OPCONF}" ]    && echo "no configuration file found: ${OPCONF}" && exit 1
+
+# populate DOCKER_SERVICES from fug.yml
+load_docker_services
+
+# set default args for options left blank
 default_ops
 
 # make the ops slightly easier to read. The +q hack permits
 # checking for array keys that have empty values
-[ -n "${CLI["-c"]+q}" ] && OPCONF=${CLI["-c"]}     good=1
 [ -n "${CLI["-d"]+q}" ] && OPDAEMON=${CLI["-d"]}   good=1
 [ -n "${CLI["-l"]+q}" ] && OPLOGS=${CLI["-l"]}     good=1
 [ -n "${CLI["-L"]+q}" ] && OPLOGSEXIT=${CLI["-L"]} good=1
@@ -306,10 +316,6 @@ default_ops
 [ -n "${OPVERBOSE}" ] && env && set -o xtrace
 [ -n "${OPHELP}" ]    && usage && exit 0
 [ -z "${good}" ]      && usage && exit 1
-
-# get the configuration
-[ -z "${OPCONF}" ]    && OPCONF="./fug.yml"
-[ ! -f "${OPCONF}" ]  && echo "no configuration file found: ${OPCONF}" && exit 1
 
 # get an alphanumeric name for the containers base on the current working directory
 NAME="fug_$(basename $(pwd) | sed 's/[^A-Za-z0-9]//g')"
