@@ -384,27 +384,14 @@ for i in ${OPDAEMON}; do
 done
 [ -z "${exists}" ] && watch_containers_build
 
-
 get_docker_run_args
-ticker=25000
 for i in ${OPDAEMON}; do
   unset PORT
   inherit_container_environment $i
   nuke_container $i
-
   echo " * Starting ${NAME}_${i}"
-
-  # if starting on an "auto" port, automatically assign the port to start on
-  if [ -z "${PORT}" ] && [ "$(echo ${DOCKER_PORTS[$i]} | grep auto)" ]; then
-    ((ticker=ticker+10))
-    export PORT=$ticker
-  fi
-
-  if [ "${PORT}" ]; then
-    ARGS[$i]+=" --publish=${PORT}:${PORT}"
-    customport="PORT_${i}"
-    export ${customport}=$PORT # for haproxy
-  fi
+  customport="PORT_${i}"
+  [ "${!customport}" ] && export PORT=${!customport}
 
   # run and background the docker process
   nohup docker run --restart=always ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i} > /dev/null 2>&1 &
