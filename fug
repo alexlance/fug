@@ -108,19 +108,21 @@ function get_docker_run_args() {
     DOCKER_ROOT[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.privileged  < ${OPCONF} | sed 's/- / /g')
     DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
     DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
+    DOCKER_VOLFROM[$i]+=$(${FUGDIR}/shyaml get-value ${i}.vol-from    < ${OPCONF} | sed 's/- / /g')
     DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
   done
 
   # build up command line argument to docker run
-  for i in $ALL_SERVICES; do
-    for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}"; done
-    for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                 done
-    for v in ${DOCKER_ENVFILE[$i]}; do ARGS[$i]+=" --env-file=./${i}/${v}";   done
-    for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";              done
-    for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";             done
-    for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";            done
-    for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                       done
-    for v in ${DOCKER_PORTS[$i]};   do [ "$v" != "auto" ] && ARGS[$i]+=" --publish=$v"; done
+  for i in $DOCKER_SERVICES; do
+    for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}";    done
+    for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                    done
+    for v in ${DOCKER_ENVFILE[$i]}; do ARGS[$i]+=" --env-file=${v}";             done
+    for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";                 done
+    for v in ${DOCKER_VOLFROM[$i]}; do ARGS[$i]+=" --volumes-from=${NAME}_${v}"; done
+    for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";                done
+    for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";               done
+    for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                          done
+    for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";                done
   done
 }
 
@@ -259,7 +261,7 @@ function inherit_container_environment() {
 
 # These are the currently supported docker settings
 declare -A DOCKER_LINKS DOCKER_ENV DOCKER_EXTRA DOCKER_ROOT DOCKER_PORTS
-declare -A DOCKER_VOLUMES DOCKER_HOSTS DOCKER_PATH DOCKER_ENVFILE
+declare -A DOCKER_VOLUMES DOCKER_VOLFROM DOCKER_HOSTS DOCKER_PATH DOCKER_ENVFILE
 
 # where `docker run` cli options are constructed, PIDS is for build process ids
 declare -A ARGS PIDS
