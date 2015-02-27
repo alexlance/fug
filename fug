@@ -102,35 +102,37 @@ function default_ops() {
 }
 
 function get_docker_run_args() {
-  # parse the fug.yml configuration file
-  for i in $(${FUGDIR}/shyaml keys < ${OPCONF}); do
-    DOCKER_LINKS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.links       < ${OPCONF} | sed 's/- / /g')
-    DOCKER_ENV[$i]+=$(    ${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g')
-    DOCKER_ENVFILE[$i]+=$(${FUGDIR}/shyaml get-value ${i}.env-file    < ${OPCONF} | sed 's/- / /g')
-    DOCKER_EXTRA[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.extra       < ${OPCONF} | sed 's/- / /g')
-    DOCKER_ROOT[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.privileged  < ${OPCONF} | sed 's/- / /g')
-    DOCKER_PORTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
-    DOCKER_VOLUMES[$i]+=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
-    DOCKER_VOLFROM[$i]+=$(${FUGDIR}/shyaml get-value ${i}.vol-from    < ${OPCONF} | sed 's/- / /g')
-    DOCKER_HOSTS[$i]+=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
-  done
+  local i=$1
+  local v
+  #unset DOCKER_LINKS[$i] DOCKER_ENV[$i] DOCKER_ENVFILE[$i] DOCKER_EXTRA[$i] DOCKER_ROOT[$i] DOCKER_PORTS[$i] DOCKER_VOLUMES[$i] DOCKER_VOLFROM[$i] DOCKER_HOSTS[$i] ARGS[$i]
 
-  # build up command line argument to docker run
-  for i in $DOCKER_SERVICES; do
-    for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}";    done
-    for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                    done
-    for v in ${DOCKER_ENVFILE[$i]}; do ARGS[$i]+=" --env-file=${v}";             done
-    for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";                 done
-    for v in ${DOCKER_VOLFROM[$i]}; do ARGS[$i]+=" --volumes-from=${NAME}_${v}"; done
-    for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";                done
-    for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";               done
-    for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                          done
-    for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";                done
-  done
+  # parse the fug.yml configuration file
+  DOCKER_LINKS[$i]=$(  ${FUGDIR}/shyaml get-value ${i}.links       < ${OPCONF} | sed 's/- / /g')
+  DOCKER_ENV[$i]=$(    ${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g')
+  DOCKER_ENVFILE[$i]=$(${FUGDIR}/shyaml get-value ${i}.env-file    < ${OPCONF} | sed 's/- / /g')
+  DOCKER_EXTRA[$i]=$(  ${FUGDIR}/shyaml get-value ${i}.extra       < ${OPCONF} | sed 's/- / /g')
+  DOCKER_ROOT[$i]=$(   ${FUGDIR}/shyaml get-value ${i}.privileged  < ${OPCONF} | sed 's/- / /g')
+  DOCKER_PORTS[$i]=$(  ${FUGDIR}/shyaml get-value ${i}.ports       < ${OPCONF} | sed 's/- / /g')
+  DOCKER_VOLUMES[$i]=$(${FUGDIR}/shyaml get-value ${i}.volumes     < ${OPCONF} | sed 's/- / /g')
+  DOCKER_VOLFROM[$i]=$(${FUGDIR}/shyaml get-value ${i}.vol-from    < ${OPCONF} | sed 's/- / /g')
+  DOCKER_HOSTS[$i]=$(  ${FUGDIR}/shyaml get-value ${i}.hosts       < ${OPCONF} | sed 's/- / /g')
+
+  ARGS[$i]=""
+  for v in ${DOCKER_LINKS[$i]};   do ARGS[$i]+=" --link=${NAME}_${v}:${v}";    done
+  for v in ${DOCKER_ENV[$i]};     do ARGS[$i]+=" --env=$v";                    done
+  for v in ${DOCKER_ENVFILE[$i]}; do ARGS[$i]+=" --env-file=${v}";             done
+  for v in ${DOCKER_VOLUMES[$i]}; do ARGS[$i]+=" --volume=$v";                 done
+  for v in ${DOCKER_VOLFROM[$i]}; do ARGS[$i]+=" --volumes-from=${NAME}_${v}"; done
+  for v in ${DOCKER_ROOT[$i]};    do ARGS[$i]+=" --privileged";                done
+  for v in ${DOCKER_HOSTS[$i]};   do ARGS[$i]+=" --add-host=$v";               done
+  for v in ${DOCKER_EXTRA[$i]};   do ARGS[$i]+=" $v";                          done
+  for v in ${DOCKER_PORTS[$i]};   do ARGS[$i]+=" --publish=$v";                done
 }
+
 
 function get_docker_build_args() {
   # parse the fug.yml configuration file
+  local i
   for i in $(${FUGDIR}/shyaml keys < ${OPCONF}); do
     DOCKER_PATH[$i]+=$(   ${FUGDIR}/shyaml get-value ${i}.build       < ${OPCONF} | sed 's/- / /g')
   done
@@ -256,11 +258,12 @@ function watch_containers_build() {
 
 function inherit_container_environment() {
   local i=$1
+  local v exportvars
   local id=$(docker ps | grep -E "\b${NAME}_${i}\b" | awk '{ print $1 }')
   if [ "${id}" ]; then
-    for v in ${DOCKER_ENVFILE[$i]}; do
+    for v in $(${FUGDIR}/shyaml get-value ${i}.env-file < ${OPCONF} | sed 's/- / /g'); do
       unset exportvars
-      [ -f "./${i}/${v}" ] && exportvars=$(docker exec $id env | sed 's/\(.*\)=\(.*$\)/export \1="\2"/g' | grep -f ./${i}/${v})
+      [ -f "${v}" ] && exportvars=$(docker exec $id env | sed 's/\(.*\)=\(.*$\)/export \1="\2"/g' | grep -f ${v})
       [ -n "$exportvars" ] && eval "$exportvars"
     done
   fi
@@ -392,7 +395,7 @@ for i in ${OPDAEMON}; do
 done
 [ -z "${exists}" ] && watch_containers_build
 
-get_docker_run_args
+# start services
 for i in ${OPDAEMON}; do
   unset PORT
   inherit_container_environment $i
@@ -400,6 +403,8 @@ for i in ${OPDAEMON}; do
   echo " * Starting ${NAME}_${i}"
   customport="PORT_${i}"
   [ "${!customport}" ] && export PORT=${!customport}
+  [ "${PORT}" ] && export PORT_${i}=$PORT
+  get_docker_run_args $i
 
   # run and background the docker process
   nohup docker run --restart=always ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i} > /dev/null 2>&1 &
