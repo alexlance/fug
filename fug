@@ -107,7 +107,6 @@ function default_ops() {
 function get_docker_run_args() {
   local i=$1
   local v
-  #unset DOCKER_LINKS[$i] DOCKER_ENV[$i] DOCKER_ENVFILE[$i] DOCKER_EXTRA[$i] DOCKER_ROOT[$i] DOCKER_PORTS[$i] DOCKER_VOLUMES[$i] DOCKER_VOLFROM[$i] DOCKER_HOSTS[$i] ARGS[$i]
 
   # parse the fug.yml configuration file
   DOCKER_LINKS[$i]=$(  ${FUGDIR}/shyaml get-value ${i}.links       < ${OPCONF} | sed 's/- / /g')
@@ -301,7 +300,6 @@ end_colour='\033[0m' # No Color
 # Setup the valid cli options and their defaults
 get_ops "$@"
 validate_ops
-
 
 # get the configuration file
 [ -n "${CLI["-c"]+q}" ] && OPCONF=${CLI["-c"]}     good=1
