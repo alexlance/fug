@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# initialisation file
+[ -f "./fug.rc" ] && . ./fug.rc
+
 # ensure this env var has no impact
 unset DOCKER_SERVICES
 
