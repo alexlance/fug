@@ -14,7 +14,7 @@ Why not fig?
 1. Fig doesn't seem to have support for `docker run --add-host` (yet?)
 2. I haven't had very good debugging experiences with fig.
 3. No support for environment variables in fig's config file.
-4. No ability to stop, build and restart individual containers without bringing down all of them.
+4. No ability to stop, build and restart individual containers without bringing down all of them. It seems.
 5. Fug can build containers in parallel (by default) or sequentially (with -v)
 6. Fug maintains environment variables across container restarts (fug -d)
 
@@ -64,5 +64,5 @@ If no list of NAMES is specified, then the operation will apply to ALL services.
 the services defined in the fug.yml file.
 
 Fug looks for a fug.yml file that defines the manner in which docker run is invoked for
-each service. The fug.yml file supports environment variables in \${SOMEVAR} format.
+each service. The fug.yml file supports environment variables in ${SOMEVAR} format.
 
