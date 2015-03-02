@@ -35,6 +35,7 @@ Options
     -s [NAMES]      stop containers
     -e NAME         exec into a container
     -v              verbose debugging
+    -q              quiet, show reduced output
     -h              display this help
 
 Examples

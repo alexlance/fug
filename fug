@@ -29,6 +29,7 @@ OPTIONS:
     -s [NAMES]      stop containers
     -e NAME         exec into a container
     -v              verbose debugging
+    -q              quiet, show reduced output
     -h              display this help
 
 Fug looks for a fug.yml file that defines the manner in which docker run is invoked for
@@ -154,7 +155,7 @@ function nuke_container() {
   local ids="$(docker ps -a | grep -E "\b${NAME}_${i}\b" | awk '{print $1}')"
   for x in $ids; do
     if [ -n "${x}" ]; then
-      echo " * Stopping ${NAME}_${i} ($x)"
+      [ -z "${OPQUIET}" ] && echo " * Stopping ${NAME}_${i} ($x)"
       docker stop -t 0 $x > /dev/null
       docker rm -f $x > /dev/null
     fi
@@ -197,7 +198,7 @@ function build_container() {
 
   # if verbose, then we run in non-concurrent build mode
   if [ -n "${OPVERBOSE}" ]; then
-    echo " * Building $i (${NAME}_${i}) "
+    [ -z "${OPQUIET}" ] && echo " * Building $i (${NAME}_${i}) "
     $cmd
     if [ "$?" != "0" ]; then
      echo "*** Build container failed: $i"
@@ -233,22 +234,22 @@ function watch_containers_build() {
 
     # echo out an updating status line
     if [ -z "${OPVERBOSE}" ]; then
-      echo -n "Build(${ticker}s): "
+      [ -z "${OPQUIET}" ] && echo -n "Build(${ticker}s): "
       for i in $OPBUILD; do
         if [ "${EXITS[$i]}" == "-1" ] ; then
-          echo -n "$i "
+          [ -z "${OPQUIET}" ] && echo -n "$i "
         elif [ "${EXITS[$i]}" != "0" ] ; then
-          echo -ne "${red}${i}${end_colour} "
+          [ -z "${OPQUIET}" ] && echo -ne "${red}${i}${end_colour} "
         else
-          echo -ne "${green}${i}${end_colour} "
+          [ -z "${OPQUIET}" ] && echo -ne "${green}${i}${end_colour} "
         fi
       done
-      echo -ne '\r' # backspace the whole line
+      [ -z "${OPQUIET}" ] && echo -ne '\r' # backspace the whole line
     fi
     sleep 1
   done
 
-  [ -z "${OPVERBOSE}" ] && echo ""
+  [ -z "${OPVERBOSE}" ] && [ -z "${OPQUIET}" ] && echo ""
 
   for i in ${!EXITS[@]}; do
     if [ "${EXITS[$i]}" != "0" ]; then
@@ -322,6 +323,7 @@ default_ops
 [ -n "${CLI["-s"]+q}" ] && OPSTOP=${CLI["-s"]}     good=1
 [ -n "${CLI["-e"]+q}" ] && OPEXEC=${CLI["-e"]}     good=1
 [ -n "${CLI["-v"]+q}" ] && OPVERBOSE=1             good=1
+[ -n "${CLI["-q"]+q}" ] && OPQUIET=1               good=1
 [ -n "${CLI["-h"]+q}" ] && OPHELP=1                good=1
 
 # helper monkeys
@@ -401,7 +403,7 @@ for i in ${OPDAEMON}; do
   unset PORT
   inherit_container_environment $i
   nuke_container $i
-  echo " * Starting ${NAME}_${i}"
+  [ -z "${OPQUIET}" ] && echo " * Starting ${NAME}_${i}"
   customport="PORT_${i}"
   [ "${!customport}" ] && export PORT=${!customport}
   [ "${PORT}" ] && export PORT_${i}=$PORT
