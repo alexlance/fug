@@ -13,7 +13,7 @@ Why not fig?
 
 1. Fig doesn't seem to have support for `docker run --add-host` (yet?)
 2. I haven't had very good debugging experiences with fig.
-3. No support for environment variables in fig's config file.
+3. No support for environment variables in fig's config file (plus fug validates that the env vars are set).
 4. No ability to stop, build and restart individual containers without bringing down all of them. It seems.
 5. Fug can build containers in parallel (by default) or sequentially (with -v)
 6. Fug maintains environment variables across container restarts (fug -d)
