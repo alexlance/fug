@@ -271,7 +271,7 @@ function inherit_container_environment() {
     done
   fi
   for v in $(${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g'); do
-    eval "$v"
+    [ "$(grep '=' <<< "$v")" ] && eval "$v"
   done
 }
 
