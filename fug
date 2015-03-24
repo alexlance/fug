@@ -270,6 +270,21 @@ function inherit_container_environment() {
       [ -n "$exportvars" ] && eval "$exportvars"
     done
   fi
+  for v in $(${FUGDIR}/shyaml get-value ${i}.environment < ${OPCONF} | sed 's/- / /g'); do
+    eval "$v"
+  done
+}
+
+function validate_container_environment() {
+  local i=$1
+  local line v
+  for v in $(${FUGDIR}/shyaml get-value ${i}.env-file < ${OPCONF} | sed 's/- / /g'); do
+    [ ! -f "${v}" ] && echo "Missing environment file for $i" && exit 1
+    while read -r line; do
+      line=$(echo $line | sed 's/=.*$//')
+      [ -z "${!line}" ] && echo "Environment variable: $line not set (found in $v)" && exit 1
+    done <<< "$(cat $v)"
+  done
 }
 
 function load_docker_services() {
@@ -404,9 +419,7 @@ for i in ${OPDAEMON}; do
   inherit_container_environment $i
   nuke_container $i
   [ -z "${OPQUIET}" ] && echo " * Starting ${NAME}_${i}"
-  customport="PORT_${i}"
-  [ "${!customport}" ] && export PORT=${!customport}
-  [ "${PORT}" ] && export PORT_${i}=$PORT
+  validate_container_environment $i
   get_docker_run_args $i
 
   # run and background the docker process
