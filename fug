@@ -424,8 +424,9 @@ for i in ${OPDAEMON}; do
 
   # run and background the docker process
   nohup docker run --restart=always ${ARGS[$i]} --name=${NAME}_${i} ${NAME}_${i} > /dev/null 2>&1 &
-
+  exit_status=$?
   # artificial delay to permit docker links to work correctly
   [ "${DOCKER_LINKS[$i]}" ] && sleep 0.5
 done
 
+exit $exit_status
