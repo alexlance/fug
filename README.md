@@ -1,5 +1,5 @@
-Fug
-===
+Fug - DEPRECATED use docker-compose instead
+===========================================
 
 Faster and uglier than fig
 --------------------------
